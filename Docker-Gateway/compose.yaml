@@ -26,7 +26,8 @@ services:
       - "127.0.0.1:18081:8081"
     environment:
       PUBLIC_WS_URL: ${PUBLIC_WS_URL:?set PUBLIC_WS_URL}
-      BACKEND: ${BACKEND:-openai}
+      AI_BACKEND: ${AI_BACKEND:-}
+      BACKEND: ${BACKEND:-}
       INSTRUCTIONS: ${INSTRUCTIONS:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-realtime-2.1}
       OPENAI_TRANSCRIPTION_MODEL: ${OPENAI_TRANSCRIPTION_MODEL:-gpt-4o-mini-transcribe}

@@ -1,6 +1,6 @@
 # Mistral backend
 
-`BACKEND=mistral` replaces the single OpenAI Realtime session with three
+`AI_BACKEND=mistral` replaces the single OpenAI Realtime session with three
 Mistral API calls per turn:
 
 ```text
@@ -51,7 +51,7 @@ The automated tests run against a local stand-in for the Mistral API
    sudo chmod 0400 secrets/mistral_api_key.txt
    ```
 
-2. Set `BACKEND=mistral` in `.env`, rebuild and recreate the container.
+2. Set `AI_BACKEND=mistral` in `.env`, rebuild and recreate the container.
 
 3. Choose a voice. With `MISTRAL_VOICE_ID` empty the gateway uses the first
    preset voice for `MISTRAL_LANGUAGE`, and fails to start a session when
@@ -62,7 +62,7 @@ The automated tests run against a local stand-in for the Mistral API
      --entrypoint /opt/venv/bin/python gateway -m xiaozhi_gateway.mistral_voices
    ```
 
-Switching back is `BACKEND=openai` and recreating the container.
+Switching back is `AI_BACKEND=openai` and recreating the container.
 
 ## Turn detection
 

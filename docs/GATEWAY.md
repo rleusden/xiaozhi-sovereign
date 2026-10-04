@@ -4,7 +4,7 @@
 
 The gateway is a deliberately small protocol boundary between XiaoZhi firmware and an AI backend. It exists so the ESP32 does not need provider credentials, provider-specific protocol logic or a direct relationship with an external cloud.
 
-The gateway bridges XiaoZhi WebSocket/Opus traffic to one of two backends, selected with `BACKEND`: OpenAI Realtime, or Mistral AI (transcription, chat and speech as separate requests).
+The gateway bridges XiaoZhi WebSocket/Opus traffic to one of two backends, selected with `AI_BACKEND`: OpenAI Realtime, or Mistral AI (transcription, chat and speech as separate requests).
 
 The alpha source is in [`Docker-Gateway/`](../Docker-Gateway/). It is the complete runnable component, not an OpenClaw plugin or a wrapper around another gateway.
 
