@@ -1,0 +1,55 @@
+services:
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        PYTHON_BUILD_IMAGE: ${DHI_PYTHON_BUILD_IMAGE:?pin DHI build image by digest}
+        PYTHON_RUNTIME_IMAGE: ${DHI_PYTHON_RUNTIME_IMAGE:?pin DHI runtime image by digest}
+    image: xiaozhi-openai-gateway:0.1-alpha
+    container_name: xiaozhi-openai-gateway
+    restart: unless-stopped
+    init: true
+    user: "65532:65532"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m
+    mem_limit: 384m
+    # DS218+ DSM doesn't expose the cgroup controllers required by Compose's
+    # `cpus` / NanoCPUs and `pids_limit` settings. A memory limit remains set.
+    ports:
+      - "127.0.0.1:18080:8080"
+      - "127.0.0.1:18081:8081"
+    environment:
+      PUBLIC_WS_URL: ${PUBLIC_WS_URL:?set PUBLIC_WS_URL}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-realtime-2.1}
+      OPENAI_TRANSCRIPTION_MODEL: ${OPENAI_TRANSCRIPTION_MODEL:-gpt-4o-mini-transcribe}
+      OPENAI_VOICE: ${OPENAI_VOICE:-marin}
+      TIMEZONE_OFFSET_MINUTES: ${TIMEZONE_OFFSET_MINUTES:-0}
+      XIAOZHI_ALLOWED_DEVICE_ID: ${XIAOZHI_ALLOWED_DEVICE_ID:-}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    secrets:
+      - openai_api_key
+      - xiaozhi_device_token
+    healthcheck:
+      test:
+        - CMD
+        - /opt/venv/bin/python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=2).read()
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+secrets:
+  openai_api_key:
+    file: ./secrets/openai_api_key.txt
+  xiaozhi_device_token:
+    file: ./secrets/xiaozhi_device_token.txt

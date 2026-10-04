@@ -1,0 +1,12 @@
+**/__pycache__/
+**/*.py[cod]
+**/.venv/
+**/build/
+**/releases/
+**/managed_components/
+**/sdkconfig
+**/sdkconfig.old
+**/dependencies.lock
+**/secrets/
+**/.env
+

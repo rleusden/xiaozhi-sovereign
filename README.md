@@ -2,16 +2,11 @@
 
 **A small, auditable XiaoZhi voice-assistant fork that keeps the device under your control.**
 
- <p align="center">
-     <img src="freenove-xiaozhi-soeverein.png"
-          alt="Freenove ESP32-S3 running XiaoZhi Sovereign"
-          width="445"><br>
-     <sub>© Original product photo: Freenove, display image edited</sub>
-   </p>
+> **v0.1-alpha — technical preview.** The firmware and gateway have been exercised together on the reference hardware, but this release is not independently audited or production-certified.
 
 XiaoZhi Sovereign combines modified ESP32 firmware with a self-hosted gateway. The device no longer needs the original XiaoZhi cloud path: it obtains its configuration from infrastructure you operate and sends voice traffic only through your gateway.
 
-> Sovereign does not mean “no external processing”. The current proof of concept gateway uses OpenAI Realtime, so audio, transcripts and prompts required for a conversation are processed by OpenAI currently. Sovereignty here means that this dependency is explicit, replaceable and controlled at a gateway boundary. Local and European provider backends like Mistral are roadmap items, not current features.
+> Sovereign does not mean “no external processing”. The current gateway uses OpenAI Realtime, so audio, transcripts and prompts required for a conversation are processed by OpenAI. Sovereignty here means that this dependency is explicit, replaceable and controlled at a gateway boundary. Local and European provider backends are roadmap items, not current features.
 
 ## Why this project exists
 
@@ -41,14 +36,15 @@ The reverse proxy terminates public TLS. The gateway authenticates the device, t
 
 ## Repository structure
 
-The repository is intended to contain:
+The repository contains:
 
 ```text
-firmware/              Modified XiaoZhi ESP32 firmware
-gateway/               Minimal self-hosted protocol gateway
+ESP32-Freenove-Firmware/  Modified ESP32 firmware for the Freenove board
+Docker-Gateway/           Minimal self-hosted protocol gateway
 docs/SOVEREIGNTY.md    Definition, trust boundaries and data processing
 docs/FIRMWARE.md       Firmware changes and supported hardware
 docs/GATEWAY.md        Gateway responsibilities and hardening
+RELEASE-v0.1-alpha.md  Release contents, status and verification
 LICENSE                Licence and attribution for the firmware fork
 GATEWAY_LICENSE        Licence for the independently written gateway
 ```
@@ -71,7 +67,7 @@ This is a focused fork, not a claim that upstream XiaoZhi cannot be self-hosted 
 
 ## Current status
 
-The project is an early hardware-validated prototype, not a finished consumer product.
+The project is an early hardware-tested prototype, not a finished consumer product. See [the alpha release notes](RELEASE-v0.1-alpha.md) for the exact validation boundary.
 
 Implemented:
 
@@ -114,6 +110,6 @@ See [Sovereignty](docs/SOVEREIGNTY.md) for the complete position.
 
 The firmware is derived from the [XiaoZhi ESP32 project](https://github.com/78/xiaozhi-esp32) and retains upstream attribution. See [`LICENSE`](LICENSE).
 
-The gateway is independently written for this project and is distributed under its own MIT licence. See [`GATEWAY_LICENSE`](GATEWAY_LICENSE).
+The gateway is independently written for this project and is distributed under Apache-2.0. See [`GATEWAY_LICENSE`](GATEWAY_LICENSE).
 
 XiaoZhi Sovereign is an independent project and is not an official XiaoZhi distribution.

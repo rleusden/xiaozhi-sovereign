@@ -6,6 +6,8 @@ The gateway is a deliberately small protocol boundary between XiaoZhi firmware a
 
 The current implementation bridges XiaoZhi WebSocket/Opus traffic to OpenAI Realtime.
 
+The alpha source is in [`Docker-Gateway/`](../Docker-Gateway/). It is the complete runnable component, not an OpenClaw plugin or a wrapper around another gateway.
+
 ## Responsibilities
 
 The gateway is responsible for:

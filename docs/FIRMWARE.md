@@ -90,3 +90,18 @@ Each release should verify at least:
 - absence of configured upstream Chinese endpoints in the produced binaries.
 
 Passing a build is not equivalent to passing a hardware test.
+
+## Build
+
+From `ESP32-Freenove-Firmware/`, using the documented ESP-IDF 6.1 container:
+
+```sh
+python3 scripts/build.py \
+  freenove-esp32s3-display-2.8-lcd \
+  --name xandria-freenove-esp32s3-display-2.8-lcd \
+  --language nl-NL \
+  --wake-word disabled \
+  --zip
+```
+
+The selected board variant currently contains the operator's bootstrap URL. Change `CONFIG_OTA_URL` in the Freenove board `config.json` before building for another deployment. The provider key is never part of the firmware.
