@@ -70,9 +70,9 @@ Follow [docs/synology-ds218plus.md](docs/synology-ds218plus.md). The short form:
    loopback port 18081 for WebSocket through DSM Reverse Proxy. This DSM
    version cannot route by URL path.
 5. Point the board's Custom OTA URL at
-   `https://xandria.synology.me/xiaozhi/ota/`.
+   `https://<your host>.synology.me/xiaozhi/ota/`.
 
-No Zyxel port-forward is needed for a board used only on the home LAN. If DSM
+No router port-forward is needed for a board used only on the home LAN. If DSM
 Firewall is enabled, allow TCP 8443 from the LAN only.
 
 ## Local tests
