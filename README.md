@@ -11,7 +11,7 @@
 
 XiaoZhi Sovereign combines modified ESP32 firmware with a self-hosted gateway. The device no longer needs the original XiaoZhi cloud path: it obtains its configuration from infrastructure you operate and sends voice traffic only through your gateway.
 
-> Sovereign does not mean “no external processing”. The current gateway uses OpenAI Realtime, so audio, transcripts and prompts required for a conversation are processed by OpenAI currently. Sovereignty here means that this dependency is explicit, replaceable and controlled at a gateway boundary. Local and European provider backends are roadmap items, not current features.
+> Sovereign does not mean “no external processing”. The current proof of concept gateway uses OpenAI Realtime, so audio, transcripts and prompts required for a conversation are processed by OpenAI currently. Sovereignty here means that this dependency is explicit, replaceable and controlled at a gateway boundary. Local and European provider backends like Mistral are roadmap items, not current features.
 
 ## Why this project exists
 
