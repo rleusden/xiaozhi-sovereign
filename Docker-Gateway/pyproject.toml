@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "xiaozhi-openai-gateway"
-version = "0.1.0a1"
-description = "Minimal XiaoZhi WebSocket/Opus to OpenAI Realtime gateway"
+version = "0.2.0a1"
+description = "Minimal XiaoZhi WebSocket/Opus gateway for OpenAI Realtime or Mistral"
 requires-python = ">=3.12"
 dependencies = ["websockets==15.0.1"]
 

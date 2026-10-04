@@ -53,7 +53,7 @@ as a text turn.
 |---|---|
 | `{"type":"stt","text":"…","session_id":"…"}` | final input transcription |
 | `tts/start` | enter speaking state before audio |
-| `tts/sentence_start` with text | display text for the answer |
+| `tts/sentence_start` with text | complete display text for the answer; sent once per response, after the user's `stt` text, and at the latest just before `tts/stop` |
 | binary frame | one raw 24 kHz mono 60 ms Opus packet (1440 samples) |
 | `tts/stop` | leave speaking state |
 

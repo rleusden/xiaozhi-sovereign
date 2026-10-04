@@ -13,7 +13,7 @@
 
 XiaoZhi Sovereign combines modified ESP32 firmware with a self-hosted gateway. The device no longer needs the original XiaoZhi cloud path: it obtains its configuration from infrastructure you operate and sends voice traffic only through your gateway.
 
-> Sovereign does not mean “no external processing”. The current gateway uses OpenAI Realtime, so audio, transcripts and prompts required for a conversation are processed by OpenAI. Sovereignty here means that this dependency is explicit, replaceable and controlled at a gateway boundary. Local and European provider backends are roadmap items, not current features.
+> Sovereign does not mean “no external processing”. The gateway sends the audio, transcripts and prompts required for a conversation to the provider you select: OpenAI (Realtime) or Mistral AI (transcription, chat and speech). Sovereignty here means that this dependency is explicit, replaceable and controlled at a gateway boundary. A local-model backend is a roadmap item, not a current feature.
 
 ## Why this project exists
 
@@ -35,11 +35,12 @@ The project favours understandable code and explicit boundaries over a large fea
 flowchart LR
     D["ESP32-S3 device"] -->|"TLS: bootstrap + WebSocket/Opus"| R["Owner-controlled reverse proxy"]
     R --> G["Hardened gateway container"]
-    G -->|"Realtime API"| P["Configured AI provider"]
-    G -.->|"Future adapter"| L["Local or EU-hosted model"]
+    G -->|"BACKEND=openai: Realtime API"| O["OpenAI"]
+    G -->|"BACKEND=mistral: STT + chat + TTS"| M["Mistral AI"]
+    G -.->|"Future adapter"| L["Local model"]
 ```
 
-The reverse proxy terminates public TLS. The gateway authenticates the device, translates the narrow XiaoZhi WebSocket/Opus protocol and holds provider credentials. The ESP32 never connects directly to an AI provider.
+The reverse proxy terminates public TLS. The gateway authenticates the device, translates the narrow XiaoZhi WebSocket/Opus protocol and holds provider credentials. The ESP32 never connects directly to an AI provider. One setting, `BACKEND`, selects the provider; the device firmware is the same for both.
 
 ## Repository structure
 
@@ -82,6 +83,7 @@ Implemented:
 - Dutch user interface and local idle artwork;
 - self-hosted HTTPS bootstrap and secure WebSocket endpoint;
 - Opus audio bridge to OpenAI Realtime;
+- Mistral backend (Voxtral transcription, a Mistral chat model, Voxtral speech) with turn detection in the gateway; see [its notes](Docker-Gateway/docs/mistral.md);
 - device token authentication and optional device-ID restriction;
 - physical session control using BOOT or GPIO2-to-GND;
 - bounded post-answer listening window;
@@ -89,7 +91,7 @@ Implemented:
 
 Not yet implemented:
 
-- Mistral or generic provider adapters;
+- a Dutch voice for the Mistral backend: Mistral offers no Dutch preset voice, and its English and French presets are not intelligible in Dutch, so Dutch speech currently needs the OpenAI backend or a custom Mistral voice (untested);
 - an operational local-model backend;
 - multi-device administration;
 - a browser-based management interface;
@@ -112,6 +114,7 @@ See [Sovereignty](docs/SOVEREIGNTY.md) for the complete position.
 - [Sovereignty principles and trust boundaries](docs/SOVEREIGNTY.md)
 - [Firmware design and upstream differences](docs/FIRMWARE.md)
 - [Gateway architecture and hardening](docs/GATEWAY.md)
+- [Mistral backend: setup, tuning and limits](Docker-Gateway/docs/mistral.md)
 
 ## Upstream and licences
 

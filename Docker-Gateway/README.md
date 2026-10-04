@@ -1,13 +1,14 @@
-# XiaoZhi OpenAI Gateway MVP
+# XiaoZhi Sovereign Gateway
 
 A deliberately small gateway for stock XiaoZhi ESP32 firmware:
 
 ```text
 XiaoZhi (WebSocket + Opus 16 kHz)
         ⇅
-this gateway (state machine + libopus + 16→24 kHz resampling)
+this gateway (state machine + libopus)
         ⇅
-OpenAI Realtime API (WebSocket + PCM16 24 kHz)
+BACKEND=openai:   OpenAI Realtime API (WebSocket + PCM16 24 kHz)
+BACKEND=mistral:  Mistral transcription + chat + speech (HTTPS)
 ```
 
 Version `v0.1-alpha` implements bootstrap, client/server hello, all three listen
@@ -18,10 +19,10 @@ abort, idle close, and clean device reconnects. See the
 ## Privacy boundary
 
 The gateway does not persist or log audio or transcripts and has no telemetry.
-Audio and text **do leave the home network for OpenAI processing**. This is an
-OpenAI-backed alternative to the stock service, not an offline system. Review
-OpenAI's current [API data controls](https://platform.openai.com/docs/guides/your-data)
-before use. Local STT/LLM/TTS inference is not part of this project and is not a
+Audio and text **do leave the home network for processing by the selected
+provider**, OpenAI or Mistral AI. This is a self-hosted alternative to the
+stock service, not an offline system. Review the provider's data terms before
+use, for example OpenAI's [API data controls](https://platform.openai.com/docs/guides/your-data). Local STT/LLM/TTS inference is not part of this project and is not a
 realistic workload for the DS218+; the NAS runs only the lightweight gateway.
 
 Excluded by design: MQTT, MCP/tools, firmware OTA delivery, a web UI, analytics,
@@ -35,11 +36,23 @@ voice storage, transcript storage, and automatic Internet exposure.
 - Device output: one raw Opus packet per frame, mono 24 kHz, 60 ms
   (1440 samples), paced in real time.
 - `manual`: explicit `listen/stop` commits the input buffer.
-- `auto` and `realtime`: OpenAI server VAD commits and creates a response.
+- `auto` and `realtime`: the backend ends the turn; OpenAI with server VAD, the
+  Mistral backend with silence detection in the gateway.
 - Abort invalidates queued packets, cancels upstream work, and emits one
   `tts/stop` for that abort.
-- Every reconnect receives a fresh gateway UUID and a fresh OpenAI session.
+- Every reconnect receives a fresh gateway UUID and a fresh backend session.
   Conversation history does not survive reconnects.
+
+## Backend boundary
+
+The XiaoZhi layer (`protocol.py`) knows no provider. It drives a
+`ConversationBackend` (`backend.py`) with 16 kHz PCM and turn commands, and
+receives normalised events: user speech started/ended, user transcript,
+response started/text/audio/done. Response audio is always 24 kHz PCM.
+`openai_backend.py` holds resampling to OpenAI's 24 kHz input and all Realtime
+event names. `mistral_backend.py` chains Mistral transcription, chat and
+speech, and ends a turn with its own silence detection; see
+[docs/mistral.md](docs/mistral.md).
 
 ## Security defaults
 
@@ -50,7 +63,7 @@ voice storage, transcript storage, and automatic Internet exposure.
   Docker cgroup controllers needed for hard CPU and PID limits; the Compose
   file therefore makes no claim that these are enforced.
 - Host listeners bind only to `127.0.0.1`; DSM terminates trusted TLS.
-- OpenAI and device credentials are mounted as files, never environment values.
+- Provider and device credentials are mounted as files, never environment values.
 - WebSocket protocol/version, device identity, token, state transitions, JSON,
   packet, turn, idle, and session limits are enforced.
 - Logs contain a truncated SHA-256 device reference and technical events only.
@@ -87,8 +100,10 @@ PYTHONPATH=src .venv/bin/python -m unittest discover -s tests -v
 
 The tests cover bootstrap output, strict hello validation, Opus encoding,
 streaming resampling, wake-word coalescing, manual turn commit, abort semantics,
-and TTS/audio event ordering. They do not make a paid OpenAI request and do not
-replace the one-board network capture described in the NAS guide.
+TTS/audio event ordering, the OpenAI event mapping, silence detection and the
+Mistral pipeline. The Mistral tests run against a local stand-in for the
+Mistral API (`tests/fake_mistral.py`). No test makes a paid provider request,
+and none replaces the one-board network capture described in the NAS guide.
 
 ## Configuration
 
@@ -97,6 +112,17 @@ replace the one-board network capture described in the NAS guide.
 | `PUBLIC_WS_URL` | required | externally visible `wss://` endpoint |
 | `DHI_PYTHON_BUILD_IMAGE` | required | digest-pinned DHI development image |
 | `DHI_PYTHON_RUNTIME_IMAGE` | required | digest-pinned DHI runtime image |
+| `BACKEND` | `openai` | Conversation backend: `openai` or `mistral` |
+| `MISTRAL_MODEL` | `mistral-small-latest` | Mistral chat model |
+| `MISTRAL_STT_MODEL` | `voxtral-mini-latest` | Mistral transcription model |
+| `MISTRAL_TTS_MODEL` | `voxtral-mini-tts-2603` | Mistral speech model |
+| `MISTRAL_VOICE_ID` | empty | Mistral voice; empty picks the first preset voice for the language |
+| `MISTRAL_LANGUAGE` | `nl` | language hint for transcription and voice choice |
+| `MISTRAL_MAX_SENTENCES` | `3` | Mistral backend: sentences per answer; `0` is no limit |
+| `MISTRAL_TELL_DATE` | empty | Mistral backend: `1` gives the model the local date and time |
+| `MISTRAL_TTS_GAIN` | `1.0` | Mistral backend: volume factor for the spoken answer |
+| `VAD_THRESHOLD` | `300` | Mistral backend: minimum speech level (PCM16 RMS) |
+| `VAD_SILENCE_MS` | `800` | Mistral backend: silence that ends a turn |
 | `OPENAI_MODEL` | `gpt-realtime-2.1` | Realtime model |
 | `OPENAI_TRANSCRIPTION_MODEL` | `gpt-4o-mini-transcribe` | input transcript model |
 | `OPENAI_VOICE` | `marin` | Realtime output voice |
@@ -106,7 +132,7 @@ replace the one-board network capture described in the NAS guide.
 | `MAX_SESSION_SECONDS` | `3300` | device session lifetime |
 | `LOG_LEVEL` | `INFO` | technical log verbosity |
 
-`OPENAI_INSTRUCTIONS` may override the compact Dutch-safe system instruction.
+`INSTRUCTIONS` (or the older `OPENAI_INSTRUCTIONS`) may override the compact Dutch-safe system instruction.
 Keep it in `.env` only if it contains no sensitive information.
 
 ## MVP limitations
@@ -116,11 +142,14 @@ Keep it in `.env` only if it contains no sensitive information.
   revocation.
 - Linear 16→24 kHz resampling favors a tiny dependency surface over studio
   quality. Speech quality should be validated on the physical board.
-- One `tts/sentence_start` is emitted per response. The display gets the text
-  accumulated when the first audio packet is due, not guaranteed full text.
-- There is no local fallback when OpenAI or the Internet is unavailable.
-- The image build and live Realtime exchange must still be validated on the
-  x86-64 DS218+ with real DHI credentials and an OpenAI API key.
+- One `tts/sentence_start` is emitted per response, with the complete answer
+  text. It is sent when the response is complete and after the user's `stt`
+  text, so it can appear a moment after the audio starts.
+- There is no local fallback when the provider or the Internet is unavailable.
+- The Mistral backend has no Dutch preset voice and no barge-in; see
+  [docs/mistral.md](docs/mistral.md).
+- Both backends have been exercised on the x86-64 DS218+ with the reference
+  board. The Mistral backend was exercised in English only.
 
 ## License
 
