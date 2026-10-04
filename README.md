@@ -2,6 +2,13 @@
 
 **A small, auditable XiaoZhi voice-assistant fork that keeps the device under your control.**
 
+ <p align="center">
+     <img src="freenove-xiaozhi-soeverein.png"
+          alt="Freenove ESP32-S3 running XiaoZhi Sovereign"
+          width="445"><br>
+     <sub>© Original product photo: Freenove, display image edited</sub>
+   </p>
+
 > **v0.1-alpha — technical preview.** The firmware and gateway have been exercised together on the reference hardware, but this release is not independently audited or production-certified.
 
 XiaoZhi Sovereign combines modified ESP32 firmware with a self-hosted gateway. The device no longer needs the original XiaoZhi cloud path: it obtains its configuration from infrastructure you operate and sends voice traffic only through your gateway.
