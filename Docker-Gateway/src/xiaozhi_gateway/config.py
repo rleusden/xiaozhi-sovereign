@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from .backend import BACKENDS
@@ -31,14 +31,25 @@ def _number(name: str, default: float, minimum: float, maximum: float) -> float:
     return value
 
 
+def _backend() -> str:
+    selected = os.getenv("AI_BACKEND", "").strip().lower()
+    legacy = os.getenv("BACKEND", "").strip().lower()
+    for name, value in (("AI_BACKEND", selected), ("BACKEND", legacy)):
+        if value and value not in BACKENDS:
+            raise RuntimeError(f"{name} must be one of: {', '.join(BACKENDS)}")
+    if selected and legacy and selected != legacy:
+        raise RuntimeError("AI_BACKEND and BACKEND select different providers")
+    return selected or legacy or "openai"
+
+
 @dataclass(frozen=True)
 class Config:
     bind_host: str
     bootstrap_port: int
     websocket_port: int
     public_ws_url: str
-    device_token: str
-    openai_api_key: str | None
+    device_token: str = field(repr=False)
+    openai_api_key: str | None = field(repr=False)
     openai_model: str
     transcription_model: str
     voice: str
@@ -49,7 +60,7 @@ class Config:
     timezone_offset_minutes: int
     log_level: str
     backend: str = "openai"
-    mistral_api_key: str | None = None
+    mistral_api_key: str | None = field(default=None, repr=False)
     mistral_base_url: str = "https://api.mistral.ai"
     mistral_model: str = "mistral-small-latest"
     mistral_stt_model: str = "voxtral-mini-latest"
@@ -64,9 +75,7 @@ class Config:
 
     @classmethod
     def from_env(cls) -> "Config":
-        backend = os.getenv("BACKEND", "openai").strip().lower()
-        if backend not in BACKENDS:
-            raise RuntimeError(f"BACKEND must be one of: {', '.join(BACKENDS)}")
+        backend = _backend()
         public_url = os.getenv("PUBLIC_WS_URL", "").strip()
         if not public_url.startswith("wss://"):
             raise RuntimeError("PUBLIC_WS_URL must start with wss://")

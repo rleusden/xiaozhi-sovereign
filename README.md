@@ -35,12 +35,12 @@ The project favours understandable code and explicit boundaries over a large fea
 flowchart LR
     D["ESP32-S3 device"] -->|"TLS: bootstrap + WebSocket/Opus"| R["Owner-controlled reverse proxy"]
     R --> G["Hardened gateway container"]
-    G -->|"BACKEND=openai: Realtime API"| O["OpenAI"]
-    G -->|"BACKEND=mistral: STT + chat + TTS"| M["Mistral AI"]
+    G -->|"AI_BACKEND=openai: Realtime API"| O["OpenAI"]
+    G -->|"AI_BACKEND=mistral: STT + chat + TTS"| M["Mistral AI"]
     G -.->|"Future adapter"| L["Local model"]
 ```
 
-The reverse proxy terminates public TLS. The gateway authenticates the device, translates the narrow XiaoZhi WebSocket/Opus protocol and holds provider credentials. The ESP32 never connects directly to an AI provider. One setting, `BACKEND`, selects the provider; the device firmware is the same for both.
+The reverse proxy terminates public TLS. The gateway authenticates the device, translates the narrow XiaoZhi WebSocket/Opus protocol and holds provider credentials. The ESP32 never connects directly to an AI provider. One setting, `AI_BACKEND`, selects the provider; the device firmware is the same for both.
 
 ## Repository structure
 

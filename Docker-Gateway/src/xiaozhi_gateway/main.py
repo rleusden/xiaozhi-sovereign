@@ -46,6 +46,7 @@ async def main() -> None:
         event(
             logger,
             "gateway_ready",
+            backend=config.backend,
             bootstrap_port=config.bootstrap_port,
             websocket_port=config.websocket_port,
         )
@@ -61,4 +62,3 @@ def run() -> None:
 
 if __name__ == "__main__":
     run()
-

@@ -7,8 +7,8 @@ XiaoZhi (WebSocket + Opus 16 kHz)
         ⇅
 this gateway (state machine + libopus)
         ⇅
-BACKEND=openai:   OpenAI Realtime API (WebSocket + PCM16 24 kHz)
-BACKEND=mistral:  Mistral transcription + chat + speech (HTTPS)
+AI_BACKEND=openai:   OpenAI Realtime API (WebSocket + PCM16 24 kHz)
+AI_BACKEND=mistral:  Mistral transcription + chat + speech (HTTPS)
 ```
 
 Version `v0.1-alpha` implements bootstrap, client/server hello, all three listen
@@ -112,7 +112,7 @@ and none replaces the one-board network capture described in the NAS guide.
 | `PUBLIC_WS_URL` | required | externally visible `wss://` endpoint |
 | `DHI_PYTHON_BUILD_IMAGE` | required | digest-pinned DHI development image |
 | `DHI_PYTHON_RUNTIME_IMAGE` | required | digest-pinned DHI runtime image |
-| `BACKEND` | `openai` | Conversation backend: `openai` or `mistral` |
+| `AI_BACKEND` | `openai` | Conversation backend: `openai` or `mistral` |
 | `MISTRAL_MODEL` | `mistral-small-latest` | Mistral chat model |
 | `MISTRAL_STT_MODEL` | `voxtral-mini-latest` | Mistral transcription model |
 | `MISTRAL_TTS_MODEL` | `voxtral-mini-tts-2603` | Mistral speech model |
@@ -154,3 +154,20 @@ Keep it in `.env` only if it contains no sensitive information.
 ## License
 
 Apache-2.0.
+
+## Provider selection and log privacy
+
+`AI_BACKEND` is the preferred setting. Existing deployments using `BACKEND`
+continue to work. If both are set, they must select the same provider; invalid
+values or conflicting selections fail startup before any secret is read. If
+neither is set, OpenAI remains the default. The selected provider is included
+in the metadata-only `gateway_ready` event.
+
+Application `LOG_LEVEL=DEBUG` does not enable WebSocket wire diagnostics:
+those can expose headers and message content and are suppressed. Secret fields
+are excluded from the configuration representation. This does not change the
+requirement to keep content and credentials out of application log fields.
+
+Compose still mounts both provider secret files in this release; Python loads
+only the selected provider key. Provider-specific mounts, stream completion
+validation, buffer limits and bounded cleanup remain follow-up work.
