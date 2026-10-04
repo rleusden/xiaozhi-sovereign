@@ -28,13 +28,15 @@ The project uses five working principles:
 
 During an active session, microphone audio is encoded on the ESP32 and sent over a secure WebSocket to the owner-controlled endpoint. The gateway decodes or resamples audio when required and forwards the conversation to the configured AI backend. Response audio and protocol state return through the same gateway.
 
-The current backend is OpenAI Realtime. Therefore, required conversation data leaves the local environment and is processed by OpenAI. The project does not describe that configuration as offline or fully local.
+The backend is OpenAI Realtime or Mistral AI, as configured by the owner. In both cases the required conversation data leaves the local environment and is processed by that provider: OpenAI in the first case, Mistral AI, a company established in France, in the second. Choosing Mistral changes which legal entity and jurisdiction process the data; it does not make the configuration offline or local, and the project does not describe either configuration that way.
 
 Outside an active session, the intended design is that no microphone audio is sent to the gateway. A bounded follow-up window closes the WebSocket session after the answer unless the user begins a follow-up interaction.
 
 ## Data minimisation
 
-The gateway should process only what is required for the current conversation:
+The gateway should process only what is required for the current conversation. With the Mistral backend the gateway itself keeps the last exchanges of the conversation in memory, because the provider holds no session; that history is discarded when the device disconnects.
+
+The following apply to both backends:
 
 - no raw-audio archive;
 - no transcript logging;
@@ -50,7 +52,7 @@ Operational logs should contain only events such as connection, listening state,
 
 The gateway is the architectural seam between device protocol and AI backend. A future provider adapter may target a European provider or a model operated locally. That change must not require provider credentials in the firmware or a redesign of the device protocol.
 
-Replaceability is a design requirement, not evidence that every adapter already exists. At present, only the documented OpenAI Realtime path should be treated as implemented.
+Replaceability is a design requirement, not evidence that every adapter already exists. At present the OpenAI Realtime and Mistral paths are implemented; switching between them is one gateway setting and needs no firmware change. A local-model backend does not exist yet.
 
 ## Deployment choices
 
@@ -86,6 +88,7 @@ This project does not claim:
 - that open source code is automatically secure;
 - that the firmware resists a capable attacker with physical access;
 - that the system is GDPR-compliant without deployment-specific governance;
-- that local-model and multi-provider support already exist.
+- that a local-model backend already exists;
+- that the Mistral backend can speak every language it can transcribe: it has no Dutch preset voice.
 
 The goal is not technological purity. It is informed, reversible control over a clearly documented system.

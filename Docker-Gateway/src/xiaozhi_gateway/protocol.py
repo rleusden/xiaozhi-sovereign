@@ -1,23 +1,32 @@
 from __future__ import annotations
 
 import asyncio
-import base64
 import hmac
 import json
 import logging
 import time
 import uuid
 from enum import Enum
-from typing import Any, Protocol
+from typing import Any
 
 from websockets.asyncio.server import ServerConnection
 from websockets.exceptions import ConnectionClosed
 
+from .backend import (
+    BackendError,
+    ConversationBackend,
+    ResponseAudio,
+    ResponseDone,
+    ResponseStarted,
+    ResponseText,
+    UserSpeechEnded,
+    UserSpeechStarted,
+    UserTranscript,
+    create_backend,
+)
 from .config import Config
 from .logging_safe import device_ref, event
-from .openai_realtime import OpenAIRealtime
 from .opus import OpusCodec, OpusError
-from .resample import Resample16To24
 
 
 class State(str, Enum):
@@ -29,27 +38,28 @@ class State(str, Enum):
     CLOSED = "closed"
 
 
-class Realtime(Protocol):
-    async def open(self) -> None: ...
-    async def set_mode(self, mode: str) -> None: ...
-    async def append_pcm(self, pcm: bytes) -> None: ...
-    async def commit_and_respond(self) -> None: ...
-    async def send_text(self, text: str) -> None: ...
-    async def cancel(self, *, response: bool, clear_audio: bool) -> None: ...
-    def events(self): ...
-    async def close(self) -> None: ...
+def _reason(exc: Exception) -> dict[str, str]:
+    fields = {"reason": type(exc).__name__}
+    if isinstance(exc, BackendError):
+        # By contract a BackendError message carries no provider payload.
+        fields["detail"] = str(exc)
+    return fields
 
 
 class DeviceSession:
     JSON_LIMIT = 8192
     AUDIO_FRAME_BYTES = 1440 * 2
+    # Encoded answer audio waiting to be sent at playback speed. It holds a
+    # whole answer (90 s) so that reading backend events, such as the answer
+    # text, is not held up until the audio has almost finished playing.
+    OUTPUT_QUEUE_FRAMES = 1500
 
     def __init__(
         self,
         ws: ServerConnection,
         config: Config,
         *,
-        realtime: Realtime | None = None,
+        backend: ConversationBackend | None = None,
         codec: OpusCodec | None = None,
     ) -> None:
         self.ws = ws
@@ -61,21 +71,23 @@ class DeviceSession:
         self.device_id = ws.request.headers.get("Device-Id", "")
         self.client_id = ws.request.headers.get("Client-Id", "")
         self.ref = device_ref(self.device_id, self.client_id)
-        self.realtime = realtime or OpenAIRealtime(
+        self.backend = backend or create_backend(
             config, f"{self.device_id}\0{self.client_id}"
         )
         self.codec = codec or OpusCodec()
-        self.resampler = Resample16To24()
         self.mode = "auto"
         self.input_samples = 0
         self.output_pcm = bytearray()
-        self.output_queue: asyncio.Queue[tuple[int, bytes | None]] = asyncio.Queue(64)
+        self.output_queue: asyncio.Queue[tuple[int, bytes | None]] = asyncio.Queue(
+            self.OUTPUT_QUEUE_FRAMES
+        )
         self.turn = 0
         self.tts_started = False
         self.tts_stopped = True
         self.sentence_started = False
         self.output_text = ""
-        self.responses: dict[str, int] = {}
+        self.output_text_final = False
+        self.user_text_sent = False
         self.prelisten_packets = 0
         self._detect_task: asyncio.Task | None = None
         self._detect_submitted = False
@@ -106,7 +118,7 @@ class DeviceSession:
             )
             self.state = State.IDLE
             event(self.log, "device_connected", device=self.ref)
-            await self.realtime.open()
+            await self.backend.open()
             self._upstream_task = asyncio.create_task(self._read_upstream())
             self._output_task = asyncio.create_task(self._send_output())
             while True:
@@ -136,14 +148,14 @@ class DeviceSession:
             event(self.log, "protocol_error", device=self.ref, reason=type(exc).__name__)
             await self.ws.close(1008, "protocol violation")
         except Exception as exc:
-            event(self.log, "session_error", device=self.ref, reason=type(exc).__name__)
+            event(self.log, "session_error", device=self.ref, **_reason(exc))
             await self.ws.close(1011, "gateway error")
         finally:
             self.state = State.CLOSED
             for task in (self._upstream_task, self._output_task, self._detect_task):
                 if task is not None:
                     task.cancel()
-            await self.realtime.close()
+            await self.backend.close()
             self.codec.close()
             event(self.log, "device_disconnected", device=self.ref)
 
@@ -220,25 +232,18 @@ class DeviceSession:
             self._reset_turn()
             self.mode = mode
             self.prelisten_packets = 0
-            await self.realtime.set_mode(mode)
+            await self.backend.start_turn(self.turn, mode)
             self.state = State.LISTENING
             event(self.log, "listen_start", device=self.ref, mode=mode)
         elif action == "stop":
             if self.state != State.LISTENING:
                 raise ValueError("listen/stop in invalid state")
             self.state = State.PROCESSING
-            tail = self.resampler.flush()
-            if tail:
-                await self.realtime.append_pcm(tail)
-            if self.mode == "manual":
-                if self.input_samples == 0:
-                    raise ValueError("empty manual turn")
-                await self.realtime.commit_and_respond()
-            elif self.input_samples:
-                # An explicit client stop wins over server VAD. Switching VAD
-                # off and committing are ordered on the upstream WebSocket.
-                await self.realtime.set_mode("manual")
-                await self.realtime.commit_and_respond()
+            if self.mode == "manual" and self.input_samples == 0:
+                raise ValueError("empty manual turn")
+            if self.input_samples:
+                # An explicit client stop wins over backend turn detection.
+                await self.backend.end_turn()
             event(self.log, "listen_stop", device=self.ref, mode=self.mode)
         elif action == "detect":
             text = message.get("text")
@@ -250,6 +255,7 @@ class DeviceSession:
             self._reset_turn()
             self.state = State.PROCESSING
             await self._send_json({"type": "stt", "session_id": self.session_id, "text": text})
+            self.user_text_sent = True
             self._detect_submitted = False
             self._detect_task = asyncio.create_task(
                 self._submit_detect_after_grace(self.turn, text)
@@ -282,9 +288,7 @@ class DeviceSession:
         self.input_samples += len(pcm16) // 2
         if self.input_samples > self.config.max_turn_seconds * 16000:
             raise ValueError("turn audio limit exceeded")
-        pcm24 = self.resampler.process(pcm16)
-        if pcm24:
-            await self.realtime.append_pcm(pcm24)
+        await self.backend.append_audio(pcm16)
 
     async def _submit_detect_after_grace(self, turn: int, text: str) -> None:
         try:
@@ -292,64 +296,55 @@ class DeviceSession:
             if turn != self.turn or self.state != State.PROCESSING:
                 return
             self._detect_submitted = True
-            await self.realtime.set_mode("manual")
-            await self.realtime.send_text(text)
+            await self.backend.send_text(turn, text)
         except asyncio.CancelledError:
             pass
 
     async def _read_upstream(self) -> None:
         try:
-            async for message in self.realtime.events():
-                kind = message.get("type")
-                if kind == "conversation.item.input_audio_transcription.completed":
-                    text = message.get("transcript")
-                    if isinstance(text, str) and text:
-                        await self._send_json(
-                            {"type": "stt", "session_id": self.session_id, "text": text}
-                        )
-                elif kind == "response.created":
-                    response = message.get("response", {})
-                    response_id = response.get("id") if isinstance(response, dict) else None
-                    if not isinstance(response_id, str):
-                        raise RuntimeError("OpenAI response has no id")
-                    self.responses[response_id] = self.turn
+            async for item in self.backend.events():
+                if isinstance(item, UserTranscript):
+                    await self._send_json(
+                        {"type": "stt", "session_id": self.session_id, "text": item.text}
+                    )
+                    self.user_text_sent = True
+                    await self._send_response_text()
+                elif isinstance(item, UserSpeechEnded):
+                    if self.mode in {"auto", "realtime"} and self.state == State.LISTENING:
+                        self.state = State.PROCESSING
+                elif isinstance(item, UserSpeechStarted):
+                    self.user_text_sent = False
+                    if self.mode == "realtime":
+                        self.input_samples = 0
+                elif item.turn != self.turn:
+                    # Output of a turn that was aborted or superseded.
+                    continue
+                elif isinstance(item, ResponseStarted):
                     self.state = State.SPEAKING
                     self.tts_started = True
                     self.tts_stopped = False
+                    self.output_text = ""
+                    self.output_text_final = False
+                    self.sentence_started = False
                     await self._send_json(
                         {"type": "tts", "state": "start", "session_id": self.session_id}
                     )
-                elif kind == "response.output_audio_transcript.delta":
-                    if self.responses.get(message.get("response_id")) != self.turn:
-                        continue
-                    delta = message.get("delta")
-                    if isinstance(delta, str):
-                        self.output_text += delta
-                elif kind == "response.output_audio.delta":
-                    if self.responses.get(message.get("response_id")) != self.turn:
-                        continue
-                    delta = message.get("delta")
-                    if isinstance(delta, str):
-                        self.output_pcm.extend(base64.b64decode(delta, validate=True))
-                        await self._queue_complete_frames()
-                elif kind == "response.done":
-                    response = message.get("response", {})
-                    response_id = response.get("id") if isinstance(response, dict) else None
-                    response_turn = self.responses.pop(response_id, None)
-                    if response_turn == self.turn:
-                        await self._finish_response()
-                elif kind == "input_audio_buffer.speech_stopped":
-                    if self.mode in {"auto", "realtime"} and self.state == State.LISTENING:
-                        self.state = State.PROCESSING
-                elif kind == "input_audio_buffer.speech_started":
-                    if self.mode == "realtime":
-                        self.input_samples = 0
-                elif kind == "error":
-                    raise RuntimeError("OpenAI Realtime error")
+                elif isinstance(item, ResponseText):
+                    self.output_text += item.text
+                    if item.final:
+                        self.output_text_final = True
+                        await self._send_response_text()
+                elif isinstance(item, ResponseAudio):
+                    self.output_pcm.extend(item.pcm)
+                    await self._queue_complete_frames()
+                elif isinstance(item, ResponseDone):
+                    self.output_text_final = True
+                    await self._send_response_text()
+                    await self._finish_response()
         except asyncio.CancelledError:
             raise
         except Exception as exc:
-            event(self.log, "upstream_error", device=self.ref, reason=type(exc).__name__)
+            event(self.log, "upstream_error", device=self.ref, **_reason(exc))
             await self.ws.close(1011, "upstream error")
 
     async def _queue_complete_frames(self) -> None:
@@ -371,30 +366,45 @@ class DeviceSession:
                 if turn != self.turn:
                     continue
                 if packet is None:
+                    # The user's transcript never arrived; show the answer anyway.
+                    await self._send_response_text(force=True)
                     await self._stop_tts()
                     self.state = State.LISTENING if self.mode == "realtime" else State.IDLE
                     event(self.log, "response_complete", device=self.ref)
                     continue
-                if not self.sentence_started:
-                    await self._send_json(
-                        {
-                            "type": "tts",
-                            "state": "sentence_start",
-                            "session_id": self.session_id,
-                            "text": self.output_text.strip() or "…",
-                        }
-                    )
-                    self.sentence_started = True
                 async with self._send_lock:
                     await self.ws.send(packet)
                 await asyncio.sleep(0.06)
             finally:
                 self.output_queue.task_done()
 
+    async def _send_response_text(self, *, force: bool = False) -> None:
+        """Send the answer text once: complete, and after the user's text.
+
+        The device appends one bubble per message and cannot update it, so the
+        text is held until the response is complete. It is also held until the
+        user's transcript has been sent, because a backend may deliver that
+        transcript after the response has started.
+        """
+        if self.sentence_started or not self.tts_started:
+            return
+        if not force and not (self.output_text_final and self.user_text_sent):
+            return
+        text = self.output_text.strip()
+        if not text:
+            return
+        self.sentence_started = True
+        await self._send_json(
+            {
+                "type": "tts",
+                "state": "sentence_start",
+                "session_id": self.session_id,
+                "text": text,
+            }
+        )
+
     async def _abort(self) -> None:
-        old_turn = self.turn
-        had_response = old_turn in self.responses.values()
-        cancel_response = had_response or self.state in {State.PROCESSING, State.SPEAKING}
+        cancel_response = self.state in {State.PROCESSING, State.SPEAKING}
         had_audio = self.input_samples > 0 and self.state in {
             State.LISTENING,
             State.PROCESSING,
@@ -404,7 +414,7 @@ class DeviceSession:
             self._detect_task.cancel()
             self._detect_task = None
         try:
-            await self.realtime.cancel(response=cancel_response, clear_audio=had_audio)
+            await self.backend.cancel(response=cancel_response, clear_audio=had_audio)
         except Exception:
             pass
         self.output_pcm.clear()
@@ -430,10 +440,11 @@ class DeviceSession:
             self.tts_started = False
 
     def _reset_turn(self) -> None:
-        self.resampler.reset()
         self.input_samples = 0
         self.output_pcm.clear()
         self.output_text = ""
+        self.output_text_final = False
+        self.user_text_sent = False
         self.tts_started = False
         self.tts_stopped = True
         self.sentence_started = False

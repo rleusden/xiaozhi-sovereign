@@ -4,7 +4,7 @@
 
 The gateway is a deliberately small protocol boundary between XiaoZhi firmware and an AI backend. It exists so the ESP32 does not need provider credentials, provider-specific protocol logic or a direct relationship with an external cloud.
 
-The current implementation bridges XiaoZhi WebSocket/Opus traffic to OpenAI Realtime.
+The gateway bridges XiaoZhi WebSocket/Opus traffic to one of two backends, selected with `BACKEND`: OpenAI Realtime, or Mistral AI (transcription, chat and speech as separate requests).
 
 The alpha source is in [`Docker-Gateway/`](../Docker-Gateway/). It is the complete runnable component, not an OpenClaw plugin or a wrapper around another gateway.
 
@@ -52,24 +52,35 @@ sequenceDiagram
     Device->>Gateway: Authenticated WebSocket + hello
     Gateway-->>Device: Server hello
     Device->>Gateway: Listen start + Opus audio
-    Gateway->>Provider: Realtime audio session
+    Gateway->>Provider: Realtime audio session, or STT + chat + TTS requests
     Provider-->>Gateway: Transcript + response audio
     Gateway-->>Device: STT + TTS + Opus audio
     Device->>Gateway: Close after follow-up timeout
     Gateway->>Provider: Close upstream session
 ```
 
-## Current provider boundary
+## Provider boundary
 
-OpenAI Realtime is currently embedded behind a small gateway class, but the provider abstraction is not yet a completed multi-provider interface. Mistral, another European provider or a local model will require explicit adapters for:
+The XiaoZhi layer (`protocol.py`) knows no provider. It drives a `ConversationBackend` (`backend.py`) with 16 kHz PCM and turn commands, and receives normalised events: user speech started/ended, user transcript, response started/text/audio/done. Response audio is always 24 kHz PCM.
 
-- session creation and authentication;
-- streaming speech-to-text;
+Two backends implement that contract:
+
+| Backend | How a turn is processed | End of turn decided by |
+|---|---|---|
+| `openai` (`openai_backend.py`) | one OpenAI Realtime WebSocket session per device session | OpenAI server-side voice activity detection |
+| `mistral` (`mistral_backend.py`) | per turn: transcription request, streamed chat completion, streamed speech requests | energy-based silence detection in the gateway (`vad.py`) |
+
+The Mistral backend uses only the Python standard library for HTTP (`http_client.py`), keeps the conversation history in memory for the lifetime of the device session, and enforces a sentence limit on answers. Its setup, tuning and known limits are in [Docker-Gateway/docs/mistral.md](../Docker-Gateway/docs/mistral.md).
+
+A further backend, for example for a locally hosted model, must provide:
+
+- session setup and authentication;
+- speech-to-text, or audio input to a speech model;
 - conversational model invocation;
-- text-to-speech or streamed audio output;
-- cancellation and turn detection;
+- text-to-speech or streamed audio output as 24 kHz PCM;
+- cancellation and end-of-turn detection;
 - rate, size and timeout limits;
-- normalized error handling.
+- error reporting without provider payloads.
 
 Provider substitution must preserve the device-facing state machine. OpenClaw is intentionally not a dependency.
 
