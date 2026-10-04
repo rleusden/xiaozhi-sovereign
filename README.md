@@ -6,6 +6,7 @@
   <img src="freenove-xiaozhi-soeverein.png"
        alt="Freenove ESP32-S3 running XiaoZhi Sovereign"
        width="480">
+   <sub>© Original product photo: Freenove</sub>
 </p>
 
 XiaoZhi Sovereign combines modified ESP32 firmware with a self-hosted gateway. The device no longer needs the original XiaoZhi cloud path: it obtains its configuration from infrastructure you operate and sends voice traffic only through your gateway.
