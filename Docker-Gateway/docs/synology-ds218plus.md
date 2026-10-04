@@ -76,7 +76,7 @@ sudo stat -c '%u:%g %a %n' secrets/*.txt
 Both lines must start with `65532:65532 400`.
 
 `PUBLIC_WS_URL` is already set to
-`wss://xandria.synology.me:8443/xiaozhi/ws` in the supplied file. Leave
+`wss://<yourhost>.synology.me:8443/xiaozhi/ws` in the supplied file. Leave
 `XIAOZHI_ALLOWED_DEVICE_ID` empty for the first connection. Afterwards put the
 exact MAC from the device's `Device-Id` header there and recreate the container.
 
@@ -135,17 +135,17 @@ head -n 1 Dockerfile
 
 DSM 7.4.1 on this DS218+ has no source-path or destination-path fields. It can
 therefore route only on hostname and port. Using two rules on the same
-`xandria.synology.me:443` tuple would be ambiguous. Keep one hostname and split
+`<yourhost>.synology.me:443` tuple would be ambiguous. Keep one hostname and split
 the services across two TLS ports instead.
 
 In **Control Panel → Login Portal → Advanced → Reverse Proxy**, create these two
 HTTPS rules using the existing wildcard certificate for
-`*.xandria.synology.me`:
+`*.<yourhost>.synology.me`:
 
 | Source | Destination |
 |---|---|
-| `https://xandria.synology.me:443` | `http://127.0.0.1:18080` |
-| `https://xandria.synology.me:8443` | `http://127.0.0.1:18081` |
+| `https://<yourhost>.synology.me:443` | `http://127.0.0.1:18080` |
+| `https://<yourhost>.synology.me:8443` | `http://127.0.0.1:18081` |
 
 Enable WebSocket support on the second rule. DSM normally adds the required
 `Upgrade` and `Connection` headers when that option is enabled. Do not forward
@@ -155,25 +155,25 @@ the LAN.
 Validate from a LAN computer:
 
 ```sh
-curl -i https://xandria.synology.me/xiaozhi/ota/
+curl -i https://<yourhost>.synology.me/xiaozhi/ota/
 ```
 
 The response must contain only a `websocket` object whose URL starts with
-`wss://xandria.synology.me:8443/`. Never publish that response: it contains the
+`wss://<yourhost>.synology.me:8443/`. Never publish that response: it contains the
 device credential.
 
 Validate the WebSocket proxy without using a real token:
 
 ```sh
 curl --http1.1 \
-  --resolve xandria.synology.me:8443:192.168.1.102 \
+  --resolve <yourhost>.synology.me:8443:192.168.1.102 \
   --max-time 3 \
   -sS -D - -o /dev/null \
   -H 'Connection: Upgrade' \
   -H 'Upgrade: websocket' \
   -H 'Sec-WebSocket-Version: 13' \
   -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' \
-  https://xandria.synology.me:8443/xiaozhi/ws
+  https://<yourhost>.synology.me:8443/xiaozhi/ws
 ```
 
 `101 Switching Protocols` proves TLS, DSM proxying, and WebSocket upgrade. A
@@ -184,7 +184,7 @@ a normal HTTP response ending.
 ## 5. Board migration and capture
 
 Set the board's custom OTA URL to
-`https://xandria.synology.me/xiaozhi/ota/`. Keep `xandria.synology.me` resolving
+`https://<yourhost>.synology.me/xiaozhi/ota/`. Keep `<yourhost>.synology.me` resolving
 to `192.168.1.102` on LAN DNS. Do not add an Internet port-forward unless remote
 device use is an explicit requirement.
 
