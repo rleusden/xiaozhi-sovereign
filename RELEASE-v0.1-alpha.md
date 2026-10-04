@@ -30,7 +30,6 @@ This release has not received an independent security audit. Secure Boot, flash 
 
 ## Known limitations
 
-- OpenAI Realtime is the only implemented provider backend.
 - The provider remains an external data processor; this is not an offline build.
 - The gateway supports one shared device token and an optional single device-ID restriction.
 - The Freenove build variant contains the reference operator's bootstrap hostname and must be changed for another deployment.
