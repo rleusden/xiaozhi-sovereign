@@ -2,6 +2,8 @@
 
 **A small, auditable XiaoZhi voice-assistant fork that keeps the device under your control.**
 
+<p align="center"><sub>Sovereignty comes at a price. Your conversations may be worth a lot more.</sub></p>
+
  <p align="center">
      <img src="freenove-xiaozhi-soeverein.png"
           alt="Freenove ESP32-S3 running XiaoZhi Sovereign"
