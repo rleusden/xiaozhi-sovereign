@@ -58,6 +58,7 @@ class Config:
     max_turn_seconds: int
     max_session_seconds: int
     timezone_offset_minutes: int
+    timezone: str
     log_level: str
     backend: str = "openai"
     mistral_api_key: str | None = field(default=None, repr=False)
@@ -70,6 +71,17 @@ class Config:
     mistral_tts_gain: float = 1.0
     mistral_max_sentences: int = 3
     mistral_tell_date: bool = False
+    tell_date: bool = False
+    ollama_base_url: str = "http://192.168.1.24:11434"
+    ollama_model: str = "qwen2.5:7b"
+    ollama_timeout_seconds: int = 60
+    local_stt_base_url: str = "http://192.168.1.24:11500"
+    local_stt_timeout_seconds: int = 30
+    local_tts_base_url: str = "http://192.168.1.24:11501"
+    local_tts_timeout_seconds: int = 30
+    compute_wol_socket: str = "/run/xiaozhi-host/wol.sock"
+    compute_ready_timeout_seconds: int = 90
+    compute_poll_seconds: float = 1.0
     vad_threshold: int = 300
     vad_silence_ms: int = 800
 
@@ -113,6 +125,9 @@ class Config:
             timezone_offset_minutes=_integer(
                 "TIMEZONE_OFFSET_MINUTES", 0, -720, 840
             ),
+            timezone=os.getenv(
+                "TIMEZONE", "Europe/Amsterdam"
+            ).strip() or "Europe/Amsterdam",
             log_level=os.getenv("LOG_LEVEL", "INFO").upper(),
             backend=backend,
             mistral_api_key=_secret(
@@ -131,6 +146,39 @@ class Config:
             mistral_max_sentences=_integer("MISTRAL_MAX_SENTENCES", 3, 0, 20),
             mistral_tell_date=os.getenv("MISTRAL_TELL_DATE", "").strip().lower()
             in {"1", "true", "yes", "on"},
+            tell_date=(
+                os.getenv("TELL_DATE", "").strip().lower()
+                or os.getenv("MISTRAL_TELL_DATE", "").strip().lower()
+            ) in {"1", "true", "yes", "on"},
+            ollama_base_url=os.getenv(
+                "OLLAMA_BASE_URL", "http://192.168.1.24:11434"
+            ).rstrip("/"),
+            ollama_model=os.getenv("OLLAMA_MODEL", "qwen2.5:7b").strip() or "qwen2.5:7b",
+            ollama_timeout_seconds=_integer(
+                "OLLAMA_TIMEOUT_SECONDS", 60, 5, 300
+            ),
+            local_stt_base_url=os.getenv(
+                "LOCAL_STT_BASE_URL", "http://192.168.1.24:11500"
+            ).rstrip("/"),
+            local_stt_timeout_seconds=_integer(
+                "LOCAL_STT_TIMEOUT_SECONDS", 30, 5, 120
+            ),
+            local_tts_base_url=os.getenv(
+                "LOCAL_TTS_BASE_URL", "http://192.168.1.24:11501"
+            ).rstrip("/"),
+            local_tts_timeout_seconds=_integer(
+                "LOCAL_TTS_TIMEOUT_SECONDS", 30, 5, 120
+            ),
+            compute_wol_socket=os.getenv(
+                "COMPUTE_WOL_SOCKET",
+                "/run/xiaozhi-host/wol.sock",
+            ).strip() or "/run/xiaozhi-host/wol.sock",
+            compute_ready_timeout_seconds=_integer(
+                "COMPUTE_READY_TIMEOUT_SECONDS", 90, 10, 300
+            ),
+            compute_poll_seconds=_number(
+                "COMPUTE_POLL_SECONDS", 1.0, 0.2, 10.0
+            ),
             vad_threshold=_integer("VAD_THRESHOLD", 300, 20, 20000),
             vad_silence_ms=_integer("VAD_SILENCE_MS", 800, 200, 3000),
         )

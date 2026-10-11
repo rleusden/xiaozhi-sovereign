@@ -7,6 +7,7 @@ import signal
 from websockets.asyncio.server import serve
 
 from .config import Config
+from .compute_node import ComputeNodeManager
 from .http_bootstrap import BootstrapServer
 from .logging_safe import configure, event
 from .protocol import DeviceSession
@@ -21,7 +22,13 @@ async def main() -> None:
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, stop.set)
 
-    bootstrap = BootstrapServer(config)
+    compute_node = (
+        ComputeNodeManager(config)
+        if config.backend == "local"
+        else None
+    )
+
+    bootstrap = BootstrapServer(config, compute_node)
     http_server = await asyncio.start_server(
         bootstrap.handle,
         config.bind_host,

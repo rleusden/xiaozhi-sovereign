@@ -3,17 +3,25 @@ from __future__ import annotations
 import asyncio
 import json
 import time
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from http import HTTPStatus
 
 from .config import Config
+from .compute_node import ComputeNodeManager
 
 
 class BootstrapServer:
     HEADER_LIMIT = 16 * 1024
     BODY_LIMIT = 64 * 1024
 
-    def __init__(self, config: Config) -> None:
+    def __init__(
+        self,
+        config: Config,
+        compute_node: ComputeNodeManager | None = None,
+    ) -> None:
         self.config = config
+        self.compute_node = compute_node
 
     async def handle(
         self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
@@ -24,6 +32,34 @@ class BootstrapServer:
                 raise ValueError("headers too large")
             head = request.decode("iso-8859-1").split("\r\n")
             method, path, _ = head[0].split(" ", 2)
+
+            # Compute readiness is a gateway capability, not necessarily a
+            # physical compute-node capability. Cloud backends such as OpenAI
+            # and Mistral do not require the local Fujitsu node, so they are
+            # immediately ready from the device's point of view.
+            #
+            # This deliberately keeps the ESP firmware backend-agnostic:
+            #     GET  /compute/status -> {"state":"ready"}
+            #     POST /compute/wake   -> {"state":"ready"}
+            #
+            # The existing local-backend handlers below remain responsible for
+            # off/waking/warming/ready and WOL.
+            if self.config.backend != "local":
+                if method == "GET" and path == "/compute/status":
+                    await self._respond(
+                        writer,
+                        HTTPStatus.OK,
+                        {"state": "ready"},
+                    )
+                    return
+
+                if method == "POST" and path == "/compute/wake":
+                    await self._respond(
+                        writer,
+                        HTTPStatus.OK,
+                        {"state": "ready"},
+                    )
+                    return
             headers: dict[str, str] = {}
             for line in head[1:]:
                 if not line:
@@ -37,6 +73,35 @@ class BootstrapServer:
                 await asyncio.wait_for(reader.readexactly(length), timeout=5)
             if method == "GET" and path in {"/healthz", "/readyz"}:
                 await self._respond(writer, HTTPStatus.OK, {"status": "ok"})
+
+            elif method == "GET" and path == "/compute/status":
+                if self.compute_node is None:
+                    await self._respond(
+                        writer,
+                        HTTPStatus.NOT_FOUND,
+                        {"state": "unavailable"},
+                    )
+                else:
+                    await self._respond(
+                        writer,
+                        HTTPStatus.OK,
+                        await self.compute_node.status(),
+                    )
+
+            elif method == "POST" and path == "/compute/wake":
+                if self.compute_node is None:
+                    await self._respond(
+                        writer,
+                        HTTPStatus.NOT_FOUND,
+                        {"state": "unavailable"},
+                    )
+                else:
+                    await self._respond(
+                        writer,
+                        HTTPStatus.ACCEPTED,
+                        self.compute_node.wake(),
+                    )
+
             elif method in {"GET", "POST"} and path == "/xiaozhi/ota/":
                 await self._respond(
                     writer,
@@ -49,7 +114,11 @@ class BootstrapServer:
                         },
                         "server_time": {
                             "timestamp": int(time.time() * 1000),
-                            "timezone_offset": self.config.timezone_offset_minutes,
+                            "timezone_offset": int(
+                                datetime.now(
+                                    ZoneInfo(self.config.timezone)
+                                ).utcoffset().total_seconds() // 60
+                            ),
                         },
                     },
                 )

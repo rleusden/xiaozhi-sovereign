@@ -118,6 +118,7 @@ class DeviceSession:
             )
             self.state = State.IDLE
             event(self.log, "device_connected", device=self.ref)
+
             await self.backend.open()
             self._upstream_task = asyncio.create_task(self._read_upstream())
             self._output_task = asyncio.create_task(self._send_output())

@@ -1,14 +1,13 @@
-# XiaoZhi Sovereign Gateway
+# XiaoZhi OpenAI Gateway MVP
 
 A deliberately small gateway for stock XiaoZhi ESP32 firmware:
 
 ```text
 XiaoZhi (WebSocket + Opus 16 kHz)
         ⇅
-this gateway (state machine + libopus)
+this gateway (state machine + libopus + 16→24 kHz resampling)
         ⇅
-AI_BACKEND=openai:   OpenAI Realtime API (WebSocket + PCM16 24 kHz)
-AI_BACKEND=mistral:  Mistral transcription + chat + speech (HTTPS)
+OpenAI Realtime API (WebSocket + PCM16 24 kHz)
 ```
 
 Version `v0.1-alpha` implements bootstrap, client/server hello, all three listen
@@ -19,10 +18,10 @@ abort, idle close, and clean device reconnects. See the
 ## Privacy boundary
 
 The gateway does not persist or log audio or transcripts and has no telemetry.
-Audio and text **do leave the home network for processing by the selected
-provider**, OpenAI or Mistral AI. This is a self-hosted alternative to the
-stock service, not an offline system. Review the provider's data terms before
-use, for example OpenAI's [API data controls](https://platform.openai.com/docs/guides/your-data). Local STT/LLM/TTS inference is not part of this project and is not a
+Audio and text **do leave the home network for OpenAI processing**. This is an
+OpenAI-backed alternative to the stock service, not an offline system. Review
+OpenAI's current [API data controls](https://platform.openai.com/docs/guides/your-data)
+before use. Local STT/LLM/TTS inference is not part of this project and is not a
 realistic workload for the DS218+; the NAS runs only the lightweight gateway.
 
 Excluded by design: MQTT, MCP/tools, firmware OTA delivery, a web UI, analytics,
@@ -36,11 +35,10 @@ voice storage, transcript storage, and automatic Internet exposure.
 - Device output: one raw Opus packet per frame, mono 24 kHz, 60 ms
   (1440 samples), paced in real time.
 - `manual`: explicit `listen/stop` commits the input buffer.
-- `auto` and `realtime`: the backend ends the turn; OpenAI with server VAD, the
-  Mistral backend with silence detection in the gateway.
+- `auto` and `realtime`: OpenAI server VAD commits and creates a response.
 - Abort invalidates queued packets, cancels upstream work, and emits one
   `tts/stop` for that abort.
-- Every reconnect receives a fresh gateway UUID and a fresh backend session.
+- Every reconnect receives a fresh gateway UUID and a fresh OpenAI session.
   Conversation history does not survive reconnects.
 
 ## Backend boundary
@@ -63,7 +61,7 @@ speech, and ends a turn with its own silence detection; see
   Docker cgroup controllers needed for hard CPU and PID limits; the Compose
   file therefore makes no claim that these are enforced.
 - Host listeners bind only to `127.0.0.1`; DSM terminates trusted TLS.
-- Provider and device credentials are mounted as files, never environment values.
+- OpenAI and device credentials are mounted as files, never environment values.
 - WebSocket protocol/version, device identity, token, state transitions, JSON,
   packet, turn, idle, and session limits are enforced.
 - Logs contain a truncated SHA-256 device reference and technical events only.
@@ -100,10 +98,8 @@ PYTHONPATH=src .venv/bin/python -m unittest discover -s tests -v
 
 The tests cover bootstrap output, strict hello validation, Opus encoding,
 streaming resampling, wake-word coalescing, manual turn commit, abort semantics,
-TTS/audio event ordering, the OpenAI event mapping, silence detection and the
-Mistral pipeline. The Mistral tests run against a local stand-in for the
-Mistral API (`tests/fake_mistral.py`). No test makes a paid provider request,
-and none replaces the one-board network capture described in the NAS guide.
+and TTS/audio event ordering. They do not make a paid OpenAI request and do not
+replace the one-board network capture described in the NAS guide.
 
 ## Configuration
 
@@ -112,7 +108,7 @@ and none replaces the one-board network capture described in the NAS guide.
 | `PUBLIC_WS_URL` | required | externally visible `wss://` endpoint |
 | `DHI_PYTHON_BUILD_IMAGE` | required | digest-pinned DHI development image |
 | `DHI_PYTHON_RUNTIME_IMAGE` | required | digest-pinned DHI runtime image |
-| `AI_BACKEND` | `openai` | Conversation backend: `openai` or `mistral` |
+| `BACKEND` | `openai` | Conversation backend: `openai` or `mistral` |
 | `MISTRAL_MODEL` | `mistral-small-latest` | Mistral chat model |
 | `MISTRAL_STT_MODEL` | `voxtral-mini-latest` | Mistral transcription model |
 | `MISTRAL_TTS_MODEL` | `voxtral-mini-tts-2603` | Mistral speech model |
@@ -145,29 +141,10 @@ Keep it in `.env` only if it contains no sensitive information.
 - One `tts/sentence_start` is emitted per response, with the complete answer
   text. It is sent when the response is complete and after the user's `stt`
   text, so it can appear a moment after the audio starts.
-- There is no local fallback when the provider or the Internet is unavailable.
-- The Mistral backend has no Dutch preset voice and no barge-in; see
-  [docs/mistral.md](docs/mistral.md).
-- Both backends have been exercised on the x86-64 DS218+ with the reference
-  board. The Mistral backend was exercised in English only.
+- There is no local fallback when OpenAI or the Internet is unavailable.
+- The image build and live Realtime exchange must still be validated on the
+  x86-64 DS218+ with real DHI credentials and an OpenAI API key.
 
 ## License
 
 Apache-2.0.
-
-## Provider selection and log privacy
-
-`AI_BACKEND` is the preferred setting. Existing deployments using `BACKEND`
-continue to work. If both are set, they must select the same provider; invalid
-values or conflicting selections fail startup before any secret is read. If
-neither is set, OpenAI remains the default. The selected provider is included
-in the metadata-only `gateway_ready` event.
-
-Application `LOG_LEVEL=DEBUG` does not enable WebSocket wire diagnostics:
-those can expose headers and message content and are suppressed. Secret fields
-are excluded from the configuration representation. This does not change the
-requirement to keep content and credentials out of application log fields.
-
-Compose still mounts both provider secret files in this release; Python loads
-only the selected provider key. Provider-specific mounts, stream completion
-validation, buffer limits and bounded cleanup remain follow-up work.
