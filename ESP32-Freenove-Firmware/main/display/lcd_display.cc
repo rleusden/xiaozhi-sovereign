@@ -360,6 +360,11 @@ LcdDisplay::~LcdDisplay() {
         idle_date_label_ = nullptr;
     }
     idle_image_cached_.reset();
+    if (wakeup_image_ != nullptr) {
+        lv_obj_del(wakeup_image_);
+        wakeup_image_ = nullptr;
+    }
+    wakeup_image_cached_.reset();
     if (chat_message_label_ != nullptr) {
         lv_obj_del(chat_message_label_);
     }
@@ -1272,6 +1277,62 @@ void LcdDisplay::RefreshIdleScreen() {
     char date[16];
     if (FormatLocalDate(date, sizeof(date))) {
         lv_label_set_text(idle_date_label_, date);
+    }
+}
+
+
+void LcdDisplay::ShowWakeupFrame(const char* asset_name) {
+    if (!setup_ui_called_) {
+        ESP_LOGW(TAG, "ShowWakeupFrame() called before SetupUI()");
+        return;
+    }
+
+    void* data = nullptr;
+    size_t size = 0;
+    if (!Assets::GetInstance().GetAssetData(asset_name, data, size) ||
+        data == nullptr || size == 0) {
+        ESP_LOGE(TAG, "Wake-up asset %s not found or empty", asset_name);
+        return;
+    }
+
+    auto image = std::make_unique<LvglRawImage>(data, size);
+
+    DisplayLockGuard lock(this);
+    if (!lock) {
+        return;
+    }
+
+    if (wakeup_image_ == nullptr) {
+        wakeup_image_ = lv_image_create(lv_screen_active());
+        lv_obj_set_size(wakeup_image_, LV_HOR_RES, LV_VER_RES);
+        lv_obj_align(wakeup_image_, LV_ALIGN_CENTER, 0, 0);
+        lv_obj_set_style_pad_all(wakeup_image_, 0, 0);
+        lv_obj_set_style_border_width(wakeup_image_, 0, 0);
+    }
+
+    // LVGL caches decoded memory images by source descriptor address.
+    // Our LvglRawImage wrapper can reuse the same heap address for the
+    // next PNG, so explicitly evict the previous decoded image first.
+    const void* old_src = lv_image_get_src(wakeup_image_);
+    if (old_src != nullptr) {
+        lv_image_cache_drop(old_src);
+    }
+    lv_image_set_src(wakeup_image_, nullptr);
+
+    wakeup_image_cached_ = std::move(image);
+    lv_image_set_src(wakeup_image_, wakeup_image_cached_->image_dsc());
+    lv_obj_align(wakeup_image_, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_move_foreground(wakeup_image_);
+    lv_obj_remove_flag(wakeup_image_, LV_OBJ_FLAG_HIDDEN);
+}
+
+void LcdDisplay::HideWakeupFrame() {
+    DisplayLockGuard lock(this);
+    if (!lock) {
+        return;
+    }
+    if (wakeup_image_ != nullptr) {
+        lv_obj_add_flag(wakeup_image_, LV_OBJ_FLAG_HIDDEN);
     }
 }
 

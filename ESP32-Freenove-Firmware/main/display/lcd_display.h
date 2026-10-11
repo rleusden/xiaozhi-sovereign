@@ -27,6 +27,7 @@ protected:
     lv_obj_t* emoji_label_ = nullptr;
     lv_obj_t* emoji_image_ = nullptr;
     lv_obj_t* idle_image_ = nullptr;
+    lv_obj_t* wakeup_image_ = nullptr;
     lv_obj_t* idle_date_label_ = nullptr;
     std::unique_ptr<LvglGif> gif_controller_ = nullptr;
     lv_obj_t* emoji_box_ = nullptr;
@@ -34,6 +35,7 @@ protected:
     esp_timer_handle_t preview_timer_ = nullptr;
     std::unique_ptr<LvglImage> preview_image_cached_ = nullptr;
     std::unique_ptr<LvglImage> idle_image_cached_ = nullptr;
+    std::unique_ptr<LvglImage> wakeup_image_cached_ = nullptr;
     bool hide_subtitle_ = false;  // Control whether to hide chat messages/subtitles
 
     void InitializeLcdThemes();
@@ -52,6 +54,8 @@ public:
     virtual void ClearChatMessages() override;
     virtual void ShowIdleScreen() override;
     virtual void HideIdleScreen() override;
+    virtual void ShowWakeupFrame(const char* asset_name) override;
+    virtual void HideWakeupFrame() override;
     virtual void RefreshIdleScreen() override;
     virtual void SetPreviewImage(std::unique_ptr<LvglImage> image) override;
     virtual void SetupUI() override;

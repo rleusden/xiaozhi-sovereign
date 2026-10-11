@@ -23,6 +23,30 @@
 static constexpr uint64_t FOLLOWUP_TIMEOUT_US = 20ULL * 1000ULL * 1000ULL;
 static constexpr uint64_t FOLLOWUP_SPEECH_GRACE_US = 5ULL * 1000ULL * 1000ULL;
 
+// Optional local-compute preflight.
+// This runs before XiaoZhi opens its normal WebSocket/audio channel.
+static constexpr char COMPUTE_STATUS_URL[] =
+    "https://xandria.synology.me:8444/compute/status";
+static constexpr char COMPUTE_WAKE_URL[] =
+    "https://xandria.synology.me:8444/compute/wake";
+
+static constexpr int COMPUTE_HTTP_TIMEOUT_MS = 5000;
+static constexpr int COMPUTE_POLL_INTERVAL_MS = 6000;
+static constexpr int COMPUTE_READY_TIMEOUT_MS = 120000;
+
+static constexpr int WAKEUP_FRAME_DURATION_SECONDS = 10;
+static constexpr const char* WAKEUP_FRAME_ASSETS[] = {
+    "wakeup_frame_1.png",
+    "wakeup_frame_2.png",
+    "wakeup_frame_3.png",
+    "wakeup_frame_4.png",
+    "wakeup_frame_5.png",
+    "wakeup_frame_6.png",
+    "wakeup_frame_7.png",
+};
+static constexpr size_t WAKEUP_FRAME_COUNT =
+    sizeof(WAKEUP_FRAME_ASSETS) / sizeof(WAKEUP_FRAME_ASSETS[0]);
+
 Application::Application() : notify_player_(audio_service_) {
     event_group_ = xEventGroupCreate();
 
@@ -309,6 +333,21 @@ void Application::Run() {
         if (bits & MAIN_EVENT_CLOCK_TICK) {
             clock_ticks_++;
             auto display = Board::GetInstance().GetDisplay();
+
+            if (compute_preflight_animation_active_) {
+                ++compute_preflight_animation_ticks_;
+                if (compute_preflight_animation_ticks_ >= WAKEUP_FRAME_DURATION_SECONDS) {
+                    compute_preflight_animation_ticks_ = 0;
+                    compute_preflight_frame_ =
+                        (compute_preflight_frame_ + 1) % WAKEUP_FRAME_COUNT;
+                    ESP_LOGI(TAG, "Wake-up frame %u: %s",
+                             static_cast<unsigned>(compute_preflight_frame_ + 1),
+                             WAKEUP_FRAME_ASSETS[compute_preflight_frame_]);
+                    display->ShowWakeupFrame(
+                        WAKEUP_FRAME_ASSETS[compute_preflight_frame_]);
+                }
+            }
+
             display->UpdateStatusBar();
             if (clock_ticks_ % 60 == 0) {
                 display->RefreshIdleScreen();
@@ -828,6 +867,288 @@ void Application::StartListening() { xEventGroupSetBits(event_group_, MAIN_EVENT
 
 void Application::StopListening() { xEventGroupSetBits(event_group_, MAIN_EVENT_STOP_LISTENING); }
 
+bool Application::ReadComputeState(std::string& state) {
+    auto network = Board::GetInstance().GetNetwork();
+    if (!network) {
+        ESP_LOGW(TAG, "Compute preflight: network unavailable");
+        return false;
+    }
+
+    auto http = network->CreateHttp(0);
+    if (!http) {
+        ESP_LOGW(TAG, "Compute preflight: failed to create HTTP client");
+        return false;
+    }
+
+    http->SetTimeout(COMPUTE_HTTP_TIMEOUT_MS);
+    http->SetHeader("Accept", "application/json");
+    http->SetHeader("Accept-Encoding", "identity");
+
+    auto opened = http->Open("GET", COMPUTE_STATUS_URL);
+    if (!opened) {
+        ESP_LOGW(TAG, "Compute preflight: status connection failed: %s",
+                 opened.error().ToString().c_str());
+        return false;
+    }
+
+    auto status_code = http->GetStatusCode();
+    if (!status_code) {
+        ESP_LOGW(TAG, "Compute preflight: failed to read status code: %s",
+                 status_code.error().ToString().c_str());
+        http->Close();
+        return false;
+    }
+
+    if (*status_code != 200) {
+        ESP_LOGW(TAG, "Compute preflight: /compute/status returned HTTP %d",
+                 *status_code);
+        http->Close();
+        return false;
+    }
+
+    std::string body = http->ReadAll();
+    http->Close();
+
+    cJSON* root = cJSON_Parse(body.c_str());
+    if (!root) {
+        ESP_LOGW(TAG, "Compute preflight: invalid JSON: %s", body.c_str());
+        return false;
+    }
+
+    cJSON* value = cJSON_GetObjectItem(root, "state");
+    bool ok = cJSON_IsString(value) && value->valuestring != nullptr;
+
+    if (ok) {
+        state = value->valuestring;
+    }
+
+    cJSON_Delete(root);
+
+    if (!ok) {
+        ESP_LOGW(TAG, "Compute preflight: response contains no state");
+    }
+
+    return ok;
+}
+
+bool Application::WakeComputeNode() {
+    auto network = Board::GetInstance().GetNetwork();
+    if (!network) {
+        return false;
+    }
+
+    auto http = network->CreateHttp(0);
+    if (!http) {
+        return false;
+    }
+
+    http->SetTimeout(COMPUTE_HTTP_TIMEOUT_MS);
+    http->SetHeader("Accept", "application/json");
+    http->SetHeader("Content-Type", "application/json");
+    http->SetHeader("Accept-Encoding", "identity");
+    http->SetContent("");
+
+    auto opened = http->Open("POST", COMPUTE_WAKE_URL);
+    if (!opened) {
+        ESP_LOGW(TAG, "Compute preflight: wake request failed: %s",
+                 opened.error().ToString().c_str());
+        return false;
+    }
+
+    auto status_code = http->GetStatusCode();
+    if (!status_code) {
+        ESP_LOGW(TAG, "Compute preflight: wake status failed: %s",
+                 status_code.error().ToString().c_str());
+        http->Close();
+        return false;
+    }
+
+    // Gateway currently returns 202; also accept 200 for future compatibility.
+    bool ok = (*status_code == 200 || *status_code == 202);
+
+    if (!ok) {
+        ESP_LOGW(TAG, "Compute preflight: /compute/wake returned HTTP %d",
+                 *status_code);
+    }
+
+    // Drain the small JSON response before closing.
+    http->ReadAll();
+    http->Close();
+
+    return ok;
+}
+
+void Application::ShowComputePreflightState(const std::string& state) {
+    ESP_LOGI(TAG, "Compute preflight state: %s", state.c_str());
+}
+
+
+void Application::ShowComputePreflightTimeout() {
+    compute_preflight_animation_active_ = false;
+    Board::GetInstance().GetDisplay()->HideWakeupFrame();
+
+    Schedule([this]() {
+        auto display = Board::GetInstance().GetDisplay();
+
+        display->HideIdleScreen();
+        display->SetStatus("AI");
+        display->SetEmotion("robot_2");
+        display->SetChatMessage(
+            "system",
+            "De lokale AI reageert niet. Probeer het later opnieuw.");
+
+        // We stayed in Idle during the entire preflight, so restore the
+        // wake-word detector after a failed attempt.
+        audio_service_.EnableWakeWordDetection(audio_service_.IsAfeWakeWord());
+    });
+}
+
+void Application::BeginComputePreflight(ListeningMode mode) {
+    compute_preflight_animation_active_ = true;
+    compute_preflight_animation_ticks_ = 0;
+    compute_preflight_frame_ = 0;
+    auto preflight_display = Board::GetInstance().GetDisplay();
+    preflight_display->HideIdleScreen();
+    ESP_LOGI(TAG, "Wake-up frame 1: %s", WAKEUP_FRAME_ASSETS[0]);
+                    ESP_LOGI(TAG, "Wake-up frame %u: %s",
+                             static_cast<unsigned>(compute_preflight_frame_ + 1),
+                             WAKEUP_FRAME_ASSETS[compute_preflight_frame_]);
+    preflight_display->ShowWakeupFrame(WAKEUP_FRAME_ASSETS[0]);
+
+    if (compute_preflight_task_handle_ != nullptr) {
+        ESP_LOGI(TAG, "Compute preflight already running");
+        return;
+    }
+
+    compute_preflight_mode_ = mode;
+
+    // The device deliberately remains Idle here. No XiaoZhi WebSocket is open
+    // while the compute node is booting or warming.
+    audio_service_.EnableVoiceProcessing(false);
+    audio_service_.EnableWakeWordDetection(false);
+
+    ShowComputePreflightState("checking");
+
+    BaseType_t result = xTaskCreate(
+        [](void* arg) {
+            auto* app = static_cast<Application*>(arg);
+            app->ComputePreflightTask();
+        },
+        "compute_preflight",
+        6144,
+        this,
+        2,
+        &compute_preflight_task_handle_);
+
+    if (result != pdPASS) {
+        compute_preflight_task_handle_ = nullptr;
+        ESP_LOGE(TAG, "Failed to create compute preflight task");
+        ShowComputePreflightTimeout();
+    }
+}
+
+void Application::ComputePreflightTask() {
+    ESP_LOGI(TAG, "Compute preflight started");
+
+    std::string state;
+
+    // Fast path: the compute node and model are already ready.
+    if (ReadComputeState(state) && state == "ready") {
+        ESP_LOGI(TAG, "Compute preflight: already ready");
+
+        auto mode = compute_preflight_mode_;
+        compute_preflight_task_handle_ = nullptr;
+
+        Schedule([this, mode]() {
+            if (GetDeviceState() != kDeviceStateIdle || !protocol_) {
+                return;
+            }
+
+            SetDeviceState(kDeviceStateConnecting);
+
+            // Preserve the original XiaoZhi scheduling boundary: allow the
+            // Connecting state/UI transition to be processed before opening
+            // the WebSocket/audio channel.
+            Schedule([this, mode]() {
+                ContinueOpenAudioChannel(mode);
+            });
+        });
+
+        vTaskDelete(nullptr);
+        return;
+    }
+
+    ESP_LOGI(TAG, "Compute preflight: node not ready, requesting wake");
+    ShowComputePreflightState(
+        state.empty() ? std::string("waking") : state);
+
+    if (!WakeComputeNode()) {
+        // A wake request may fail transiently while the reverse proxy or
+        // gateway is becoming reachable. Continue polling until the overall
+        // timeout instead of failing immediately.
+        ESP_LOGW(TAG, "Compute preflight: wake request failed; continuing to poll");
+    }
+
+    const TickType_t start = xTaskGetTickCount();
+    std::string previous_state;
+
+    while (true) {
+        vTaskDelay(pdMS_TO_TICKS(COMPUTE_POLL_INTERVAL_MS));
+
+        TickType_t elapsed_ticks = xTaskGetTickCount() - start;
+        uint64_t elapsed_ms =
+            static_cast<uint64_t>(elapsed_ticks) * portTICK_PERIOD_MS;
+
+        if (elapsed_ms >= COMPUTE_READY_TIMEOUT_MS) {
+            break;
+        }
+
+        state.clear();
+
+        if (!ReadComputeState(state)) {
+            ESP_LOGD(TAG, "Compute preflight: status unavailable");
+            continue;
+        }
+
+        if (state != previous_state) {
+            ESP_LOGI(TAG, "Compute preflight state: %s", state.c_str());
+            previous_state = state;
+            ShowComputePreflightState(state);
+        }
+
+        if (state == "ready") {
+            ESP_LOGI(TAG, "Compute preflight completed after %llu ms",
+                     static_cast<unsigned long long>(elapsed_ms));
+
+            auto mode = compute_preflight_mode_;
+            compute_preflight_task_handle_ = nullptr;
+
+            Schedule([this, mode]() {
+                if (GetDeviceState() != kDeviceStateIdle || !protocol_) {
+                    return;
+                }
+
+                SetDeviceState(kDeviceStateConnecting);
+
+                Schedule([this, mode]() {
+                    ContinueOpenAudioChannel(mode);
+                });
+            });
+
+            vTaskDelete(nullptr);
+            return;
+        }
+    }
+
+    ESP_LOGE(TAG, "Compute preflight timed out after %d ms",
+             COMPUTE_READY_TIMEOUT_MS);
+
+    compute_preflight_task_handle_ = nullptr;
+    ShowComputePreflightTimeout();
+
+    vTaskDelete(nullptr);
+}
+
 void Application::HandleToggleChatEvent() {
     auto state = GetDeviceState();
 
@@ -857,9 +1178,7 @@ void Application::HandleToggleChatEvent() {
     if (state == kDeviceStateIdle) {
         ListeningMode mode = GetDefaultListeningMode();
         if (!protocol_->IsAudioChannelOpened()) {
-            SetDeviceState(kDeviceStateConnecting);
-            // Schedule to let the state change be processed first (UI update)
-            Schedule([this, mode]() { ContinueOpenAudioChannel(mode); });
+            BeginComputePreflight(mode);
             return;
         }
         SetListeningMode(mode);
@@ -916,9 +1235,7 @@ void Application::HandleStartListeningEvent() {
 
     if (state == kDeviceStateIdle) {
         if (!protocol_->IsAudioChannelOpened()) {
-            SetDeviceState(kDeviceStateConnecting);
-            // Schedule to let the state change be processed first (UI update)
-            Schedule([this]() { ContinueOpenAudioChannel(kListeningModeManualStop); });
+            BeginComputePreflight(kListeningModeManualStop);
             return;
         }
         SetListeningMode(kListeningModeManualStop);
@@ -1027,6 +1344,7 @@ void Application::ContinueWakeWordInvoke(const std::string& wake_word) {
     }
 
     ESP_LOGI(TAG, "Wake word detected: %s", wake_word.c_str());
+
 #if CONFIG_SEND_WAKE_WORD_DATA
     // Encode and send the wake word data to the server
     while (auto packet = audio_service_.PopWakeWordPacket()) {
@@ -1056,6 +1374,17 @@ void Application::HandleStateChangedEvent() {
     auto& board = Board::GetInstance();
     auto display = board.GetDisplay();
     auto led = board.GetLed();
+
+    // The wake-up artwork is only a compute-preflight overlay.
+    // Once the normal XiaoZhi state machine continues, it must never
+    // remain in front of the regular UI.
+    if (new_state == kDeviceStateConnecting ||
+        new_state == kDeviceStateListening ||
+        new_state == kDeviceStateSpeaking) {
+        compute_preflight_animation_active_ = false;
+        compute_preflight_animation_ticks_ = 0;
+        display->HideWakeupFrame();
+    }
     led->OnStateChanged();
 
     // Any state transition represents activity. Remove the idle artwork while

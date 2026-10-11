@@ -48,6 +48,8 @@ public:
     virtual void ClearChatMessages();
     virtual void ShowIdleScreen() {}
     virtual void HideIdleScreen() {}
+    virtual void ShowWakeupFrame(const char* asset_name) {}
+    virtual void HideWakeupFrame() {}
     virtual void RefreshIdleScreen() {}
     virtual void SetTheme(Theme* theme);
     virtual Theme* GetTheme() { return current_theme_; }

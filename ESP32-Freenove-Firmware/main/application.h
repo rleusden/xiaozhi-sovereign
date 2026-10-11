@@ -158,6 +158,14 @@ private:
     int clock_ticks_ = 0;
     TaskHandle_t activation_task_handle_ = nullptr;
 
+    // Sovereign local-compute preflight. This task completes before the normal
+    // XiaoZhi protocol/audio channel is opened.
+    TaskHandle_t compute_preflight_task_handle_ = nullptr;
+    bool compute_preflight_animation_active_ = false;
+    uint8_t compute_preflight_animation_ticks_ = 0;
+    size_t compute_preflight_frame_ = 0;
+    ListeningMode compute_preflight_mode_ = kListeningModeAutoStop;
+
 
     // Event handlers
     void HandleStateChangedEvent();
@@ -168,6 +176,13 @@ private:
     void HandleNetworkDisconnectedEvent();
     void HandleActivationDoneEvent();
     void HandleWakeWordDetectedEvent();
+    void BeginComputePreflight(ListeningMode mode);
+    void ComputePreflightTask();
+    bool ReadComputeState(std::string& state);
+    bool WakeComputeNode();
+    void ShowComputePreflightState(const std::string& state);
+    void ShowComputePreflightTimeout();
+
     void ContinueOpenAudioChannel(ListeningMode mode);
     void BeginWakeWordInvoke(const std::string& wake_word);
     void ContinueWakeWordInvoke(const std::string& wake_word);
