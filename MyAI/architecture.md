@@ -471,7 +471,7 @@ This allows questions such as these to be answered with evidence:
 
 ## AI agents and tools
 
-If agents, MCP servers, or other tools are added later, they should follow the same boundary principle.
+If you add agents, MCP servers, or other tools later, they should follow the same boundary principle.
 
 An AI model should not automatically inherit broad infrastructure access merely because it can call tools.
 
@@ -496,7 +496,7 @@ Gateway / policy boundary
    +-- denied capability
 ```
 
-This is especially important when AI moves from generating text to performing actions.
+This matters most when AI moves from generating text to performing actions.
 
 ---
 
@@ -526,7 +526,7 @@ Lifecycle controls limit exposure and resource use.
 
 But the final control remains physical.
 
-![Physical AI kill switch](images/physical-kill-switch.png)
+<img src="images/physical-kill-switch.png" alt="Physical AI kill switch" width="50%">
 
 You can simply power off the local compute node. That is not a sophisticated control.
 It is a very effective one.
@@ -557,7 +557,7 @@ It is also about understanding your own internal ones.
 
 ## Design principles
 
-The architecture can be summarized in a small number of principles.
+The architecture can be summarized in a few principles.
 
 ### 1. Keep the client ignorant
 
