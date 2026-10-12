@@ -55,7 +55,9 @@ Its relevant characteristics are:
 - low acquisition cost on the local used market
 - complete shutdown when local AI is not required
 The exact make and model are not architectural requirements.
-Local AI stack
+
+### Local AI stack
+
 The current implementation uses:
 - Ollama for the language model
 - Qwen2.5 7B as the current model
@@ -92,26 +94,33 @@ off
 ```
 
 The gateway exposes this lifecycle to the ESP32 through a small HTTP interface:
+
 GET  /compute/status
 POST /compute/wake
 
-For cloud backends the gateway immediately reports ready.
-For the local backend it can wake the compute node and wait until the AI stack
+For cloud backends, the gateway immediately reports ready.
+For the local backend, it can wake the compute node and wait until the AI stack
 is actually available.
 This keeps backend-specific orchestration outside the ESP32 firmware.
 
 ## Design principles
 The implementation follows a few simple principles:
-Replaceability
+
+- Replaceability
+
 No individual AI provider, model or piece of hardware is a permanent dependency.
-Explicit trust boundary
+
+- Explicit trust boundary
+  
 The sovereign gateway is the boundary between the device and the selected AI
 backend.
 Local when useful, cloud when appropriate
 Sovereignty does not require everything to run locally.
 It requires knowing where data goes, being able to change that destination,
 and retaining control over the interface.
-Power only when needed
+
+- Power only when needed
+
 A local AI server does not need to run 24/7.
 The current design wakes the machine on demand and is being extended to keep
 the model warm for a limited period before shutting the compute node down again.
