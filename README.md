@@ -360,7 +360,6 @@ But the final layer remains physical.
 </p>
 
 > **Software controls are useful. Physical control is final.**  
-> — MayTag
 
 ---
 
