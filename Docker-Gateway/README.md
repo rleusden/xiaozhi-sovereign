@@ -1,13 +1,15 @@
-# XiaoZhi OpenAI Gateway MVP
+# XiaoZhi Sovereign Gateway
 
 A deliberately small gateway for stock XiaoZhi ESP32 firmware:
 
 ```text
 XiaoZhi (WebSocket + Opus 16 kHz)
         ⇅
-this gateway (state machine + libopus + 16→24 kHz resampling)
+this gateway (state machine + libopus)
         ⇅
-OpenAI Realtime API (WebSocket + PCM16 24 kHz)
+AI_BACKEND=openai:   OpenAI Realtime API (WebSocket + PCM16 24 kHz)
+AI_BACKEND=mistral:  Mistral transcription + chat + speech (HTTPS)
+AI_BACKEND=local:    speech-to-text + Ollama + text-to-speech on a local node
 ```
 
 Version `v0.1-alpha` implements bootstrap, client/server hello, all three listen
@@ -18,11 +20,13 @@ abort, idle close, and clean device reconnects. See the
 ## Privacy boundary
 
 The gateway does not persist or log audio or transcripts and has no telemetry.
-Audio and text **do leave the home network for OpenAI processing**. This is an
-OpenAI-backed alternative to the stock service, not an offline system. Review
-OpenAI's current [API data controls](https://platform.openai.com/docs/guides/your-data)
-before use. Local STT/LLM/TTS inference is not part of this project and is not a
-realistic workload for the DS218+; the NAS runs only the lightweight gateway.
+With `openai` or `mistral`, audio and text **leave the home network for
+processing by that provider**. Review the provider's data terms before use, for
+example OpenAI's [API data controls](https://platform.openai.com/docs/guides/your-data).
+With `local`, speech recognition, the language model and speech synthesis run
+on a separate compute node in your own network, and there is no fallback to a
+cloud provider. The NAS itself runs only the lightweight gateway; local
+inference is not a realistic workload for the DS218+.
 
 Excluded by design: MQTT, MCP/tools, firmware OTA delivery, a web UI, analytics,
 voice storage, transcript storage, and automatic Internet exposure.
@@ -35,10 +39,11 @@ voice storage, transcript storage, and automatic Internet exposure.
 - Device output: one raw Opus packet per frame, mono 24 kHz, 60 ms
   (1440 samples), paced in real time.
 - `manual`: explicit `listen/stop` commits the input buffer.
-- `auto` and `realtime`: OpenAI server VAD commits and creates a response.
+- `auto` and `realtime`: the backend ends the turn; OpenAI with server VAD, the
+  Mistral and local backends with silence detection in the gateway.
 - Abort invalidates queued packets, cancels upstream work, and emits one
   `tts/stop` for that abort.
-- Every reconnect receives a fresh gateway UUID and a fresh OpenAI session.
+- Every reconnect receives a fresh gateway UUID and a fresh backend session.
   Conversation history does not survive reconnects.
 
 ## Backend boundary
@@ -61,7 +66,7 @@ speech, and ends a turn with its own silence detection; see
   Docker cgroup controllers needed for hard CPU and PID limits; the Compose
   file therefore makes no claim that these are enforced.
 - Host listeners bind only to `127.0.0.1`; DSM terminates trusted TLS.
-- OpenAI and device credentials are mounted as files, never environment values.
+- Provider and device credentials are mounted as files, never environment values.
 - WebSocket protocol/version, device identity, token, state transitions, JSON,
   packet, turn, idle, and session limits are enforced.
 - Logs contain a truncated SHA-256 device reference and technical events only.
@@ -98,8 +103,32 @@ PYTHONPATH=src .venv/bin/python -m unittest discover -s tests -v
 
 The tests cover bootstrap output, strict hello validation, Opus encoding,
 streaming resampling, wake-word coalescing, manual turn commit, abort semantics,
-and TTS/audio event ordering. They do not make a paid OpenAI request and do not
-replace the one-board network capture described in the NAS guide.
+TTS/audio event ordering, the OpenAI event mapping, silence detection and the
+Mistral pipeline. The Mistral tests run against a local stand-in for the
+Mistral API (`tests/fake_mistral.py`). No test makes a paid provider request,
+and none replaces the one-board network capture described in the NAS guide.
+
+## Local backend
+
+`AI_BACKEND=local` expects three HTTP services on a compute node in the LAN:
+
+| Service | Request | Response |
+|---|---|---|
+| Speech-to-text (`LOCAL_STT_BASE_URL`) | `POST /transcribe`, body: PCM16 mono 16 kHz | JSON `{"text": "..."}` |
+| Ollama (`OLLAMA_BASE_URL`) | `POST /api/chat`, streamed | Ollama NDJSON |
+| Text-to-speech (`LOCAL_TTS_BASE_URL`) | `POST /speak`, JSON `{"text": "..."}` | WAV, mono, 16-bit |
+
+The node may be switched off. The firmware first asks the gateway
+`GET /compute/status` and, if needed, `POST /compute/wake`; the gateway then
+asks a small helper on the NAS host (`host-helper/wol_helper.py`, reached
+through the Unix socket mounted at `./run`) to send a Wake-on-LAN packet, waits
+until the three services answer and loads the model. With `openai` and
+`mistral` both endpoints answer `ready` at once.
+
+These two endpoints are currently not authenticated. Keep the port that serves
+them reachable from the LAN only.
+
+The architecture behind this is described in [`../MyAI`](../MyAI/).
 
 ## Configuration
 
@@ -108,7 +137,7 @@ replace the one-board network capture described in the NAS guide.
 | `PUBLIC_WS_URL` | required | externally visible `wss://` endpoint |
 | `DHI_PYTHON_BUILD_IMAGE` | required | digest-pinned DHI development image |
 | `DHI_PYTHON_RUNTIME_IMAGE` | required | digest-pinned DHI runtime image |
-| `BACKEND` | `openai` | Conversation backend: `openai` or `mistral` |
+| `AI_BACKEND` | `openai` | Conversation backend: `openai`, `mistral` or `local`; `BACKEND` is an older alias |
 | `MISTRAL_MODEL` | `mistral-small-latest` | Mistral chat model |
 | `MISTRAL_STT_MODEL` | `voxtral-mini-latest` | Mistral transcription model |
 | `MISTRAL_TTS_MODEL` | `voxtral-mini-tts-2603` | Mistral speech model |
@@ -122,13 +151,23 @@ replace the one-board network capture described in the NAS guide.
 | `OPENAI_MODEL` | `gpt-realtime-2.1` | Realtime model |
 | `OPENAI_TRANSCRIPTION_MODEL` | `gpt-4o-mini-transcribe` | input transcript model |
 | `OPENAI_VOICE` | `marin` | Realtime output voice |
-| `TIMEZONE_OFFSET_MINUTES` | `0` | device display offset from UTC, in minutes |
+| `TIMEZONE` | `Europe/Amsterdam` | time zone for the device clock, including daylight saving time |
+| `TIMEZONE_OFFSET_MINUTES` | `0` | UTC offset used for the date given to the model (`MISTRAL_TELL_DATE`, `TELL_DATE`) |
+| `OLLAMA_BASE_URL` | `http://192.168.1.24:11434` | local backend: Ollama on the compute node |
+| `OLLAMA_MODEL` | `qwen2.5:7b` | local backend: model name |
+| `OLLAMA_TIMEOUT_SECONDS` | `60` | local backend: Ollama request timeout |
+| `LOCAL_STT_BASE_URL` | `http://192.168.1.24:11500` | local backend: speech-to-text service |
+| `LOCAL_STT_TIMEOUT_SECONDS` | `30` | local backend: speech-to-text timeout |
+| `LOCAL_TTS_BASE_URL` | `http://192.168.1.24:11501` | local backend: text-to-speech service |
+| `LOCAL_TTS_TIMEOUT_SECONDS` | `30` | local backend: text-to-speech timeout |
+| `COMPUTE_READY_TIMEOUT_SECONDS` | `90` | local backend: wait for the services after a wake |
 | `XIAOZHI_ALLOWED_DEVICE_ID` | empty | optional exact device MAC allowlist |
 | `MAX_TURN_SECONDS` | `60` | decoded input-audio limit |
 | `MAX_SESSION_SECONDS` | `3300` | device session lifetime |
 | `LOG_LEVEL` | `INFO` | technical log verbosity |
 
 `INSTRUCTIONS` (or the older `OPENAI_INSTRUCTIONS`) may override the compact Dutch-safe system instruction.
+An empty value in `.env` means "use the default".
 Keep it in `.env` only if it contains no sensitive information.
 
 ## MVP limitations
@@ -141,9 +180,14 @@ Keep it in `.env` only if it contains no sensitive information.
 - One `tts/sentence_start` is emitted per response, with the complete answer
   text. It is sent when the response is complete and after the user's `stt`
   text, so it can appear a moment after the audio starts.
-- There is no local fallback when OpenAI or the Internet is unavailable.
-- The image build and live Realtime exchange must still be validated on the
-  x86-64 DS218+ with real DHI credentials and an OpenAI API key.
+- There is no fallback when the selected provider or the Internet is
+  unavailable; the local backend deliberately never falls back to the cloud.
+- The Mistral backend has no Dutch preset voice and no barge-in; see
+  [docs/mistral.md](docs/mistral.md).
+- The OpenAI, Mistral and local backends have been used on the x86-64 DS218+
+  with the reference board; the Mistral backend in English only.
+- The local backend, the compute endpoints and the Wake-on-LAN helper have no
+  automated tests yet.
 
 ## License
 

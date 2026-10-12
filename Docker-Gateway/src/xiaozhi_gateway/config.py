@@ -17,15 +17,33 @@ def _secret(path: str, label: str) -> str:
     return value
 
 
+def _text(name: str, default: str) -> str:
+    """An environment value, or the default when it is unset or blank.
+
+    Compose passes ``${VAR:-}`` as an empty string when the variable is not in
+    ``.env``; that must mean "use the default", not "use nothing".
+    """
+    value = os.getenv(name, "").strip()
+    return value or default
+
+
 def _integer(name: str, default: int, minimum: int, maximum: int) -> int:
-    value = int(os.getenv(name, str(default)))
+    raw = _text(name, str(default))
+    try:
+        value = int(raw)
+    except ValueError:
+        raise RuntimeError(f"{name} must be a whole number") from None
     if not minimum <= value <= maximum:
         raise RuntimeError(f"{name} must be between {minimum} and {maximum}")
     return value
 
 
 def _number(name: str, default: float, minimum: float, maximum: float) -> float:
-    value = float(os.getenv(name, str(default)))
+    raw = _text(name, str(default))
+    try:
+        value = float(raw)
+    except ValueError:
+        raise RuntimeError(f"{name} must be a number") from None
     if not minimum <= value <= maximum:
         raise RuntimeError(f"{name} must be between {minimum} and {maximum}")
     return value
@@ -58,8 +76,8 @@ class Config:
     max_turn_seconds: int
     max_session_seconds: int
     timezone_offset_minutes: int
-    timezone: str
     log_level: str
+    timezone: str = "Europe/Amsterdam"
     backend: str = "openai"
     mistral_api_key: str | None = field(default=None, repr=False)
     mistral_base_url: str = "https://api.mistral.ai"
@@ -125,9 +143,7 @@ class Config:
             timezone_offset_minutes=_integer(
                 "TIMEZONE_OFFSET_MINUTES", 0, -720, 840
             ),
-            timezone=os.getenv(
-                "TIMEZONE", "Europe/Amsterdam"
-            ).strip() or "Europe/Amsterdam",
+            timezone=_text("TIMEZONE", "Europe/Amsterdam"),
             log_level=os.getenv("LOG_LEVEL", "INFO").upper(),
             backend=backend,
             mistral_api_key=_secret(
@@ -150,29 +166,28 @@ class Config:
                 os.getenv("TELL_DATE", "").strip().lower()
                 or os.getenv("MISTRAL_TELL_DATE", "").strip().lower()
             ) in {"1", "true", "yes", "on"},
-            ollama_base_url=os.getenv(
+            ollama_base_url=_text(
                 "OLLAMA_BASE_URL", "http://192.168.1.24:11434"
             ).rstrip("/"),
-            ollama_model=os.getenv("OLLAMA_MODEL", "qwen2.5:7b").strip() or "qwen2.5:7b",
+            ollama_model=_text("OLLAMA_MODEL", "qwen2.5:7b"),
             ollama_timeout_seconds=_integer(
                 "OLLAMA_TIMEOUT_SECONDS", 60, 5, 300
             ),
-            local_stt_base_url=os.getenv(
+            local_stt_base_url=_text(
                 "LOCAL_STT_BASE_URL", "http://192.168.1.24:11500"
             ).rstrip("/"),
             local_stt_timeout_seconds=_integer(
                 "LOCAL_STT_TIMEOUT_SECONDS", 30, 5, 120
             ),
-            local_tts_base_url=os.getenv(
+            local_tts_base_url=_text(
                 "LOCAL_TTS_BASE_URL", "http://192.168.1.24:11501"
             ).rstrip("/"),
             local_tts_timeout_seconds=_integer(
                 "LOCAL_TTS_TIMEOUT_SECONDS", 30, 5, 120
             ),
-            compute_wol_socket=os.getenv(
-                "COMPUTE_WOL_SOCKET",
-                "/run/xiaozhi-host/wol.sock",
-            ).strip() or "/run/xiaozhi-host/wol.sock",
+            compute_wol_socket=_text(
+                "COMPUTE_WOL_SOCKET", "/run/xiaozhi-host/wol.sock"
+            ),
             compute_ready_timeout_seconds=_integer(
                 "COMPUTE_READY_TIMEOUT_SECONDS", 90, 10, 300
             ),

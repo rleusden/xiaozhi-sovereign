@@ -4,7 +4,7 @@
 
 The gateway is a deliberately small protocol boundary between XiaoZhi firmware and an AI backend. It exists so the ESP32 does not need provider credentials, provider-specific protocol logic or a direct relationship with an external cloud.
 
-The gateway bridges XiaoZhi WebSocket/Opus traffic to one of two backends, selected with `AI_BACKEND`: OpenAI Realtime, or Mistral AI (transcription, chat and speech as separate requests).
+The gateway bridges XiaoZhi WebSocket/Opus traffic to one of three backends, selected with `AI_BACKEND`: OpenAI Realtime; Mistral AI (transcription, chat and speech as separate requests); or a local compute node with speech-to-text, Ollama and text-to-speech.
 
 The alpha source is in [`Docker-Gateway/`](../Docker-Gateway/). It is the complete runnable component, not an OpenClaw plugin or a wrapper around another gateway.
 
@@ -63,12 +63,13 @@ sequenceDiagram
 
 The XiaoZhi layer (`protocol.py`) knows no provider. It drives a `ConversationBackend` (`backend.py`) with 16 kHz PCM and turn commands, and receives normalised events: user speech started/ended, user transcript, response started/text/audio/done. Response audio is always 24 kHz PCM.
 
-Two backends implement that contract:
+Three backends implement that contract:
 
 | Backend | How a turn is processed | End of turn decided by |
 |---|---|---|
 | `openai` (`openai_backend.py`) | one OpenAI Realtime WebSocket session per device session | OpenAI server-side voice activity detection |
 | `mistral` (`mistral_backend.py`) | per turn: transcription request, streamed chat completion, streamed speech requests | energy-based silence detection in the gateway (`vad.py`) |
+| `local` (`local_backend.py`, on `pipeline_backend.py`) | per turn: local transcription, streamed Ollama chat, local speech per sentence group | energy-based silence detection in the gateway (`vad.py`) |
 
 The Mistral backend uses only the Python standard library for HTTP (`http_client.py`), keeps the conversation history in memory for the lifetime of the device session, and enforces a sentence limit on answers. Its setup, tuning and known limits are in [Docker-Gateway/docs/mistral.md](../Docker-Gateway/docs/mistral.md).
 
