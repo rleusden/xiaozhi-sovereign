@@ -114,7 +114,7 @@ class ConversationBackend(Protocol):
     async def close(self) -> None: ...
 
 
-BACKENDS = ("openai", "mistral", "ollama-hybrid", "local")
+BACKENDS = ("openai", "mistral", "local")
 
 
 def create_backend(config: "Config", identity: str) -> ConversationBackend:
@@ -127,10 +127,6 @@ def create_backend(config: "Config", identity: str) -> ConversationBackend:
         from .mistral_backend import MistralBackend
 
         return MistralBackend(config, identity)
-    if name == "ollama-hybrid":
-        from .ollama_backend import OllamaBackend
-
-        return OllamaBackend(config, identity)
     if name == "local":
         from .local_backend import LocalBackend
 

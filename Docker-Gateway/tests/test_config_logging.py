@@ -62,6 +62,53 @@ class BackendSelectionTests(unittest.TestCase):
                     Config.from_env()
                 secret.assert_not_called()
 
+    def test_blank_values_from_compose_mean_default(self):
+        # compose.yaml passes ${VAR:-} as an empty string when .env lacks VAR.
+        blanks = {
+            name: ''
+            for name in (
+                'LOCAL_STT_BASE_URL', 'LOCAL_STT_TIMEOUT_SECONDS',
+                'LOCAL_TTS_BASE_URL', 'LOCAL_TTS_TIMEOUT_SECONDS',
+                'OLLAMA_BASE_URL', 'OLLAMA_MODEL', 'OLLAMA_TIMEOUT_SECONDS',
+                'TIMEZONE', 'VAD_THRESHOLD', 'MISTRAL_TTS_GAIN',
+            )
+        }
+        with tempfile.TemporaryDirectory() as folder:
+            env = self.environment(folder, 'openai')
+            env.update(blanks)
+            with patch.dict(os.environ, env, clear=True):
+                config = Config.from_env()
+        self.assertEqual(config.local_stt_timeout_seconds, 30)
+        self.assertEqual(config.local_tts_timeout_seconds, 30)
+        self.assertTrue(config.local_stt_base_url.startswith('http://'))
+        self.assertEqual(config.ollama_model, 'qwen2.5:7b')
+        self.assertEqual(config.timezone, 'Europe/Amsterdam')
+        self.assertEqual(config.vad_threshold, 300)
+        self.assertEqual(config.mistral_tts_gain, 1.0)
+
+    def test_malformed_number_gives_a_named_error(self):
+        with tempfile.TemporaryDirectory() as folder:
+            env = self.environment(folder, 'openai')
+            env['LOCAL_STT_TIMEOUT_SECONDS'] = 'thirty'
+            with patch.dict(os.environ, env, clear=True):
+                with self.assertRaisesRegex(RuntimeError, 'LOCAL_STT_TIMEOUT_SECONDS'):
+                    Config.from_env()
+
+    def test_local_backend_needs_no_provider_key(self):
+        with tempfile.TemporaryDirectory() as folder:
+            env = self.environment(folder, 'local')
+            env['AI_BACKEND'] = 'local'
+            with patch.dict(os.environ, env, clear=True):
+                config = Config.from_env()
+        self.assertEqual(config.backend, 'local')
+        self.assertIsNone(config.openai_api_key)
+        self.assertIsNone(config.mistral_api_key)
+
+    def test_removed_hybrid_backend_is_rejected(self):
+        with patch.dict(os.environ, {'AI_BACKEND': 'ollama-hybrid'}, clear=True):
+            with self.assertRaisesRegex(RuntimeError, 'openai, mistral, local'):
+                Config.from_env()
+
 
 class LoggingPrivacyTests(unittest.IsolatedAsyncioTestCase):
     async def test_debug_keeps_metadata_and_suppresses_actual_wire_content(self):
