@@ -104,6 +104,20 @@ class BackendSelectionTests(unittest.TestCase):
         self.assertIsNone(config.openai_api_key)
         self.assertIsNone(config.mistral_api_key)
 
+    def test_compute_url_defaults_to_the_bootstrap_host(self):
+        with tempfile.TemporaryDirectory() as folder:
+            env = self.environment(folder, 'openai')
+            env['PUBLIC_WS_URL'] = 'wss://home.example:8443/xiaozhi/ws'
+            with patch.dict(os.environ, env, clear=True):
+                self.assertEqual(Config.from_env().public_compute_url, 'https://home.example')
+            env['PUBLIC_COMPUTE_URL'] = 'https://home.example:8444/'
+            with patch.dict(os.environ, env, clear=True):
+                self.assertEqual(Config.from_env().public_compute_url, 'https://home.example:8444')
+            env['PUBLIC_COMPUTE_URL'] = 'http://home.example:8444'
+            with patch.dict(os.environ, env, clear=True):
+                with self.assertRaisesRegex(RuntimeError, 'PUBLIC_COMPUTE_URL'):
+                    Config.from_env()
+
     def test_removed_hybrid_backend_is_rejected(self):
         with patch.dict(os.environ, {'AI_BACKEND': 'ollama-hybrid'}, clear=True):
             with self.assertRaisesRegex(RuntimeError, 'openai, mistral, local'):

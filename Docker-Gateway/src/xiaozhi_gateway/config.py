@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from .backend import BACKENDS
 
@@ -49,6 +50,24 @@ def _number(name: str, default: float, minimum: float, maximum: float) -> float:
     return value
 
 
+def _compute_url(public_ws_url: str) -> str:
+    """Base URL at which the device reaches /compute/status and /compute/wake.
+
+    PUBLIC_COMPUTE_URL sets it explicitly, for example when a separate port is
+    used for these endpoints. Otherwise it is the HTTPS origin of the host in
+    PUBLIC_WS_URL on the default port, which is where the bootstrap is served.
+    """
+    explicit = _text("PUBLIC_COMPUTE_URL", "").rstrip("/")
+    if explicit:
+        if not explicit.startswith("https://"):
+            raise RuntimeError("PUBLIC_COMPUTE_URL must start with https://")
+        return explicit
+    host = urlsplit(public_ws_url).hostname
+    if not host:
+        raise RuntimeError("PUBLIC_WS_URL has no host name")
+    return f"https://{host}"
+
+
 def _backend() -> str:
     selected = os.getenv("AI_BACKEND", "").strip().lower()
     legacy = os.getenv("BACKEND", "").strip().lower()
@@ -78,6 +97,7 @@ class Config:
     timezone_offset_minutes: int
     log_level: str
     timezone: str = "Europe/Amsterdam"
+    public_compute_url: str = ""
     backend: str = "openai"
     mistral_api_key: str | None = field(default=None, repr=False)
     mistral_base_url: str = "https://api.mistral.ai"
@@ -114,6 +134,7 @@ class Config:
             bootstrap_port=_integer("BOOTSTRAP_PORT", 8080, 1, 65535),
             websocket_port=_integer("WEBSOCKET_PORT", 8081, 1, 65535),
             public_ws_url=public_url,
+            public_compute_url=_compute_url(public_url),
             device_token=_secret(
                 os.getenv("DEVICE_TOKEN_FILE", "/run/secrets/xiaozhi_device_token"),
                 "device token",

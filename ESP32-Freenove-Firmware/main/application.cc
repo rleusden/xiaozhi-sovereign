@@ -24,12 +24,9 @@ static constexpr uint64_t FOLLOWUP_TIMEOUT_US = 20ULL * 1000ULL * 1000ULL;
 static constexpr uint64_t FOLLOWUP_SPEECH_GRACE_US = 5ULL * 1000ULL * 1000ULL;
 
 // Optional local-compute preflight.
-// This runs before XiaoZhi opens its normal WebSocket/audio channel.
-static constexpr char COMPUTE_STATUS_URL[] =
-    "https://xandria.synology.me:8444/compute/status";
-static constexpr char COMPUTE_WAKE_URL[] =
-    "https://xandria.synology.me:8444/compute/wake";
-
+// This runs before XiaoZhi opens its normal WebSocket/audio channel. Whether it
+// is needed, and at which addresses, comes from the "compute" section of the
+// gateway's bootstrap (OTA) response; see Ota::CheckVersion().
 static constexpr int COMPUTE_HTTP_TIMEOUT_MS = 5000;
 static constexpr int COMPUTE_POLL_INTERVAL_MS = 6000;
 static constexpr int COMPUTE_READY_TIMEOUT_MS = 120000;
@@ -867,6 +864,34 @@ void Application::StartListening() { xEventGroupSetBits(event_group_, MAIN_EVENT
 
 void Application::StopListening() { xEventGroupSetBits(event_group_, MAIN_EVENT_STOP_LISTENING); }
 
+namespace {
+
+// The compute endpoints require the same credential as the WebSocket: the
+// device token from the bootstrap response and the device identity headers.
+template <typename HttpClient>
+void SetComputeCredentials(HttpClient& http) {
+    Settings settings("websocket", false);
+    std::string token = settings.GetString("token");
+    if (!token.empty()) {
+        if (token.find(' ') == std::string::npos) {
+            token = "Bearer " + token;
+        }
+        http.SetHeader("Authorization", token.c_str());
+    }
+    http.SetHeader("Device-Id", SystemInfo::GetMacAddress().c_str());
+    http.SetHeader("Client-Id", Board::GetInstance().GetUuid().c_str());
+}
+
+}  // namespace
+
+bool Application::LoadComputeEndpoints() {
+    Settings settings("compute", false);
+    compute_status_url_ = settings.GetString("status_url");
+    compute_wake_url_ = settings.GetString("wake_url");
+    return settings.GetBool("required", false) &&
+           !compute_status_url_.empty() && !compute_wake_url_.empty();
+}
+
 bool Application::ReadComputeState(std::string& state) {
     auto network = Board::GetInstance().GetNetwork();
     if (!network) {
@@ -883,8 +908,9 @@ bool Application::ReadComputeState(std::string& state) {
     http->SetTimeout(COMPUTE_HTTP_TIMEOUT_MS);
     http->SetHeader("Accept", "application/json");
     http->SetHeader("Accept-Encoding", "identity");
+    SetComputeCredentials(*http);
 
-    auto opened = http->Open("GET", COMPUTE_STATUS_URL);
+    auto opened = http->Open("GET", compute_status_url_);
     if (!opened) {
         ESP_LOGW(TAG, "Compute preflight: status connection failed: %s",
                  opened.error().ToString().c_str());
@@ -946,9 +972,10 @@ bool Application::WakeComputeNode() {
     http->SetHeader("Accept", "application/json");
     http->SetHeader("Content-Type", "application/json");
     http->SetHeader("Accept-Encoding", "identity");
+    SetComputeCredentials(*http);
     http->SetContent("");
 
-    auto opened = http->Open("POST", COMPUTE_WAKE_URL);
+    auto opened = http->Open("POST", compute_wake_url_);
     if (!opened) {
         ESP_LOGW(TAG, "Compute preflight: wake request failed: %s",
                  opened.error().ToString().c_str());
@@ -1004,21 +1031,27 @@ void Application::ShowComputePreflightTimeout() {
 }
 
 void Application::BeginComputePreflight(ListeningMode mode) {
+    if (compute_preflight_task_handle_ != nullptr) {
+        ESP_LOGI(TAG, "Compute preflight already running");
+        return;
+    }
+
+    // Cloud backends need no compute node. The gateway says so in the
+    // bootstrap response; then connect directly, exactly as upstream does.
+    if (!LoadComputeEndpoints()) {
+        SetDeviceState(kDeviceStateConnecting);
+        // Schedule to let the state change be processed first (UI update)
+        Schedule([this, mode]() { ContinueOpenAudioChannel(mode); });
+        return;
+    }
+
     compute_preflight_animation_active_ = true;
     compute_preflight_animation_ticks_ = 0;
     compute_preflight_frame_ = 0;
     auto preflight_display = Board::GetInstance().GetDisplay();
     preflight_display->HideIdleScreen();
     ESP_LOGI(TAG, "Wake-up frame 1: %s", WAKEUP_FRAME_ASSETS[0]);
-                    ESP_LOGI(TAG, "Wake-up frame %u: %s",
-                             static_cast<unsigned>(compute_preflight_frame_ + 1),
-                             WAKEUP_FRAME_ASSETS[compute_preflight_frame_]);
     preflight_display->ShowWakeupFrame(WAKEUP_FRAME_ASSETS[0]);
-
-    if (compute_preflight_task_handle_ != nullptr) {
-        ESP_LOGI(TAG, "Compute preflight already running");
-        return;
-    }
 
     compute_preflight_mode_ = mode;
 

@@ -188,6 +188,37 @@ NetworkResult<> Ota::CheckVersion() {
         ESP_LOGI(TAG, "No websocket section found!");
     }
 
+    // Local-compute readiness (XiaoZhi Sovereign gateway). Absent, or not
+    // required, means: connect directly without a readiness check.
+    {
+        cJSON *compute = cJSON_GetObjectItem(root, "compute");
+        bool required = false;
+        std::string status_url;
+        std::string wake_url;
+        if (cJSON_IsObject(compute)) {
+            cJSON *required_item = cJSON_GetObjectItem(compute, "required");
+            cJSON *status_item = cJSON_GetObjectItem(compute, "status_url");
+            cJSON *wake_item = cJSON_GetObjectItem(compute, "wake_url");
+            if (cJSON_IsString(status_item) && cJSON_IsString(wake_item)) {
+                status_url = status_item->valuestring;
+                wake_url = wake_item->valuestring;
+                required = cJSON_IsTrue(required_item);
+            }
+        }
+        Settings settings("compute", true);
+        // Write only on change, to spare the flash.
+        if (settings.GetBool("required", false) != required) {
+            settings.SetBool("required", required);
+        }
+        if (settings.GetString("status_url") != status_url) {
+            settings.SetString("status_url", status_url);
+        }
+        if (settings.GetString("wake_url") != wake_url) {
+            settings.SetString("wake_url", wake_url);
+        }
+        ESP_LOGI(TAG, "Compute readiness check %s", required ? "required" : "not required");
+    }
+
     has_server_time_ = false;
     cJSON *server_time = cJSON_GetObjectItem(root, "server_time");
     if (cJSON_IsObject(server_time)) {

@@ -165,6 +165,9 @@ private:
     uint8_t compute_preflight_animation_ticks_ = 0;
     size_t compute_preflight_frame_ = 0;
     ListeningMode compute_preflight_mode_ = kListeningModeAutoStop;
+    // From the "compute" section of the bootstrap response.
+    std::string compute_status_url_;
+    std::string compute_wake_url_;
 
 
     // Event handlers
@@ -177,6 +180,7 @@ private:
     void HandleActivationDoneEvent();
     void HandleWakeWordDetectedEvent();
     void BeginComputePreflight(ListeningMode mode);
+    bool LoadComputeEndpoints();
     void ComputePreflightTask();
     bool ReadComputeState(std::string& state);
     bool WakeComputeNode();
