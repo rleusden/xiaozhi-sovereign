@@ -49,7 +49,7 @@ The system must also expose:
 - timing;
 - provider selection;
 - resource use;
-- and operational behaviour.
+- and operational behavior.
 
 An AI system that cannot explain whether it is `off`, `waking`, `warming` or `ready` is difficult to operate reliably.
 
@@ -57,7 +57,7 @@ An AI system that cannot explain whether it is `off`, `waking`, `warming` or `re
 
 Governance and security controls should not exist only in documentation.
 
-Where practical, behaviour should be observable and testable.
+Where practical, behavior should be observable and testable.
 
 Examples include:
 
@@ -73,7 +73,7 @@ Examples include:
 
 Local AI is not free simply because it does not have an API invoice.
 
-Hardware, electricity, cooling, maintenance, updates and idle power are also architecture concerns.
+Hardware, electricity, cooling, maintenance, updates, and idle power are also architecture concerns.
 
 For that reason, the local compute node is intended to be powered only when needed.
 
@@ -143,7 +143,7 @@ The client does **not** know about:
 - Mistral;
 - model loading;
 - provider credentials;
-- or backend-specific lifecycle behaviour.
+- or backend-specific lifecycle behavior.
 
 From the client perspective, the relevant question is simply:
 
@@ -217,11 +217,11 @@ They are replaceable implementations behind the local backend interface.
 
 ## Provider-neutral readiness
 
-Local AI introduces a behaviour that cloud APIs usually do not have: the compute node may be completely powered off.
+Local AI introduces a behavior that cloud APIs usually do not have: the compute node may be completely powered off.
 
 The client must nevertheless remain provider-neutral.
 
-For that reason the gateway exposes a generic readiness interface:
+For that reason, the gateway exposes a generic readiness interface:
 
 ```http
 GET /compute/status
@@ -242,7 +242,7 @@ For a cloud backend:
 
 can be returned immediately.
 
-For a local backend the lifecycle may instead be:
+For a local backend, the lifecycle may instead be:
 
 ```text
 off
@@ -293,7 +293,7 @@ SHUTDOWN
 OFF
 ```
 
-A future implementation may for example keep the model warm for 30 minutes after use and then shut the compute node down automatically.
+A future implementation may, for example, keep the model warm for 30 minutes after use and then shut the compute node down automatically.
 
 This balances three concerns:
 
@@ -431,7 +431,7 @@ The principle is more important than the specific mechanism:
 
 ## Observability
 
-AI systems should expose operational behaviour as normal system behaviour, not as something hidden inside a model call.
+AI systems should expose operational behavior as normal system behavior, not as something hidden inside a model call.
 
 Relevant events include:
 
@@ -464,14 +464,14 @@ This allows questions such as these to be answered with evidence:
 - Was the compute node already warm?
 - Which backend processed the request?
 - Did the conversation leave the local environment?
-- Did STT, LLM or TTS dominate latency?
+- Did STT, LLM, or TTS dominate latency?
 - Was a provider unavailable?
 
 ---
 
 ## AI agents and tools
 
-If agents, MCP servers or other tools are added later, they should follow the same boundary principle.
+If agents, MCP servers, or other tools are added later, they should follow the same boundary principle.
 
 An AI model should not automatically inherit broad infrastructure access merely because it can call tools.
 
@@ -526,13 +526,9 @@ Lifecycle controls limit exposure and resource use.
 
 But the final control remains physical.
 
-> **Software controls are useful. Physical control is final.**  
-> — MayTag
+![Physical AI kill switch](images/physical-kill-switch.png)
 
-The local compute node can simply be powered off.
-
-That is not a sophisticated control.
-
+You can simply power off the local compute node. That is not a sophisticated control.
 It is a very effective one.
 
 ---
