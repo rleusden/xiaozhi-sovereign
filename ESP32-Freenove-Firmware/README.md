@@ -24,16 +24,30 @@ See the repository-level [firmware documentation](../docs/FIRMWARE.md), [release
 
 This firmware adds a **compute preflight** before entering the normal XiaoZhi conversation flow.
 
-When the user presses the button, the device first checks whether the selected AI backend is ready:
+Whether this check is needed, and where, comes from the gateway: its bootstrap (OTA) response contains a `compute` section, which the firmware stores at boot:
+
+```json
+"compute": {
+  "required": true,
+  "status_url": "https://<gateway host>/compute/status",
+  "wake_url": "https://<gateway host>/compute/wake"
+}
+```
+
+When `required` is true and the user presses the button, the device first checks whether the backend is ready:
 
 1. `GET /compute/status`
 2. if needed: `POST /compute/wake`
 3. poll `/compute/status` until the state becomes `ready`
 4. only then continue with the normal XiaoZhi WebSocket session
 
+Each request carries the same credential as the WebSocket: `Authorization: Bearer <device token>` plus the `Device-Id` and `Client-Id` headers.
+
 For a local backend this allows the gateway to wake and warm the local AI compute node before the conversation starts.
 
-For cloud backends such as Mistral or OpenAI, the gateway immediately returns `ready`. The ESP firmware therefore remains backend-agnostic and does not need to know whether the AI runs locally or remotely.
+For cloud backends such as Mistral or OpenAI, `required` is false and the device connects directly, without the extra request. A gateway without a `compute` section is treated the same way. The firmware contains no gateway address of its own and does not need to know whether the AI runs locally or remotely.
+
+The `compute` section is read at boot, so restart the device after changing the gateway's backend.
 
 ### Wake-up animation
 

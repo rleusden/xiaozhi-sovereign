@@ -118,15 +118,22 @@ and none replaces the one-board network capture described in the NAS guide.
 | Ollama (`OLLAMA_BASE_URL`) | `POST /api/chat`, streamed | Ollama NDJSON |
 | Text-to-speech (`LOCAL_TTS_BASE_URL`) | `POST /speak`, JSON `{"text": "..."}` | WAV, mono, 16-bit |
 
-The node may be switched off. The firmware first asks the gateway
-`GET /compute/status` and, if needed, `POST /compute/wake`; the gateway then
-asks a small helper on the NAS host (`host-helper/wol_helper.py`, reached
-through the Unix socket mounted at `./run`) to send a Wake-on-LAN packet, waits
-until the three services answer and loads the model. With `openai` and
-`mistral` both endpoints answer `ready` at once.
+The node may be switched off. The bootstrap response tells the device in a
+`compute` section whether a readiness check is needed and at which addresses
+(`PUBLIC_COMPUTE_URL`). With `local` the firmware asks `GET /compute/status`
+and, if needed, `POST /compute/wake`; the gateway then asks a small helper on
+the NAS host (`host-helper/wol_helper.py`, reached through the Unix socket
+mounted at `./run`) to send a Wake-on-LAN packet, waits until the three
+services answer and loads the model. With `openai` and `mistral` the device
+skips the check; if it asks anyway, both endpoints answer `ready`.
 
-These two endpoints are currently not authenticated. Keep the port that serves
-them reachable from the LAN only.
+Both endpoints require the device credential, as the WebSocket does: the
+`Authorization: Bearer <device token>` header and, when
+`XIAOZHI_ALLOWED_DEVICE_ID` is set, the matching `Device-Id` header. Keep the
+port that serves them reachable from the LAN only as well.
+
+The device reads the `compute` section at boot. After changing `AI_BACKEND`,
+restart the device.
 
 The architecture behind this is described in [`../MyAI`](../MyAI/).
 
@@ -135,6 +142,7 @@ The architecture behind this is described in [`../MyAI`](../MyAI/).
 | Variable | Default | Purpose |
 |---|---|---|
 | `PUBLIC_WS_URL` | required | externally visible `wss://` endpoint |
+| `PUBLIC_COMPUTE_URL` | `https://<host of PUBLIC_WS_URL>` | base address of `/compute/status` and `/compute/wake`, sent to the device |
 | `DHI_PYTHON_BUILD_IMAGE` | required | digest-pinned DHI development image |
 | `DHI_PYTHON_RUNTIME_IMAGE` | required | digest-pinned DHI runtime image |
 | `AI_BACKEND` | `openai` | Conversation backend: `openai`, `mistral` or `local`; `BACKEND` is an older alias |
