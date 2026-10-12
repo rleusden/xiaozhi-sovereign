@@ -42,6 +42,8 @@ OpenAI                Mistral              Local AI
                                              +-- LLM
                                              +-- TTS
 
+```
+
 Reference implementation
 The current reference setup uses a refurbished x86 desktop running Linux.
 Its relevant characteristics are:
@@ -64,6 +66,8 @@ The gateway talks to services through explicit interfaces rather than depending
 on the internal implementation of the compute node.
 Compute lifecycle
 Local compute is treated as an on-demand resource.
+
+```text
 off
  |
  | Wake-on-LAN
@@ -85,6 +89,7 @@ idle / warm
  | timeout
  v
 off
+```
 
 The gateway exposes this lifecycle to the ESP32 through a small HTTP interface:
 GET  /compute/status
@@ -94,7 +99,8 @@ For cloud backends the gateway immediately reports ready.
 For the local backend it can wake the compute node and wait until the AI stack
 is actually available.
 This keeps backend-specific orchestration outside the ESP32 firmware.
-Design principles
+
+## Design principles
 The implementation follows a few simple principles:
 Replaceability
 No individual AI provider, model or piece of hardware is a permanent dependency.
@@ -109,14 +115,16 @@ Power only when needed
 A local AI server does not need to run 24/7.
 The current design wakes the machine on demand and is being extended to keep
 the model warm for a limited period before shutting the compute node down again.
-Why document this?
+
+## Why document this?
 This directory is not intended to prescribe one correct local-AI setup.
-Instead it documents:
+Instead, it documents:
 - what worked
 - what did not
 - architectural trade-offs
-- lifecycle behaviour
+- lifecycle behavior
 - security boundaries
 - measured performance
+
 The intention is to make it easier for others to design their own local AI
 solution using hardware and software appropriate to their own environment.
