@@ -63,10 +63,13 @@ The current implementation uses:
 - Qwen2.5 7B as the current model
 - faster-whisper for speech-to-text
 - Supertonic for text-to-speech
+
 These components are also replaceable.
 The gateway talks to services through explicit interfaces rather than depending
 on the internal implementation of the compute node.
-Compute lifecycle
+
+### Compute lifecycle
+
 Local compute is treated as an on-demand resource.
 
 ```text
