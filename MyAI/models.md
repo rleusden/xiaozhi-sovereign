@@ -6,7 +6,7 @@ The result was a decision to retain an external API for now. None of the four lo
 
 **This is a report of observed behaviour, not a general model benchmark or a safety certification.** It does not establish that local models are inherently unsafe, that cloud models are always safe, or that an entire model family behaves like one tested configuration.
 
-> Petra is fictional. The architecture lessons are not.
+<img src="images/Petra’s architectuurlessen met robot en server.png" alt="Petra’s architectuurlessen met robot en server" width="50%">
 
 ## 1. Goals and acceptance criteria
 
